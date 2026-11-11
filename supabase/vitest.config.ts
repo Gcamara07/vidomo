@@ -5,6 +5,7 @@ export default defineProject({
     name: 'db',
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    globalSetup: ['tests/global-setup.ts'],
     // Os testes de RLS compartilham o mesmo banco local: rodar em série.
     fileParallelism: false,
     testTimeout: 20_000,

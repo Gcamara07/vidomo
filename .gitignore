@@ -1,0 +1,23 @@
+node_modules/
+.pnpm-store/
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# env — só o .env.example vai para o git
+.env
+.env.*
+!.env.example
+
+# Supabase local
+supabase/.branches/
+supabase/.temp/
+
+# GLB gerado pelos scripts (fica no Storage, não no git)
+scripts/out/
+
+.DS_Store
+Thumbs.db

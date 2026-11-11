@@ -1,0 +1,73 @@
+/*
+ * Tokens da marca Vidomo (ver CLAUDE.md).
+ * TODO(tema por organização): o branding em jsonb da organização vai sobrescrever
+ * estes tokens em runtime. Fora desta fatia.
+ */
+:root {
+  /* Paleta */
+  --color-musgo: #23382f;
+  --color-salvia: #3e5a4d;
+  --color-latao: #b08d57;
+  --color-latao-profundo: #8a6a38;
+  --color-latao-claro: #c9a86e;
+  --color-papel: #f3efe7;
+  --color-linho: #e6dfd2;
+  --color-areia: #d6cfc1;
+  --color-cinza-quente: #6b6a63;
+  --color-nanquim: #1a2420;
+  --color-erro: #b23a2e;
+
+  /* Papéis semânticos */
+  --color-primary: var(--color-musgo);
+  --color-bg: var(--color-papel);
+  --color-surface: var(--color-linho);
+  --color-text: var(--color-nanquim);
+  --color-text-muted: var(--color-cinza-quente);
+  --color-accent: var(--color-latao);
+
+  /* Status das unidades (contorno sempre Musgo 1px) */
+  --status-outline: var(--color-musgo);
+  --status-available: #8ccb8f;
+  --status-reserved-fg: #c99a2e;
+  --status-reserved-bg: #f3e3b8;
+  --status-negotiating-fg: var(--color-salvia);
+  --status-negotiating-bg: #dce5df;
+  --status-sold: #c97a6c;
+  --status-unavailable: var(--color-areia);
+  --status-selected: var(--color-latao);
+  --status-selected-outline: var(--color-nanquim);
+
+  /* Tipografia (variáveis definidas por next/font no layout) */
+  --font-title: var(--font-fraunces), Georgia, serif;
+  --font-body: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-title);
+  font-weight: 500;
+  color: var(--color-primary);
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+}

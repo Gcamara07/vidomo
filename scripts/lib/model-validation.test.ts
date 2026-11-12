@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_MODEL_BYTES, compareModel } from './model-validation';
+import { BASE_MODEL_BUDGET_BYTES, MAX_MODEL_BYTES, compareModel } from './model-validation';
 
 const db = {
   unitKeys: ['TA__F01__U101', 'TA__F01__U102', 'TA__F02__U201'],
@@ -53,6 +53,29 @@ describe('compareModel', () => {
     expect(r.unprefixedNames).toEqual(['Cube']);
     expect(r.floorsWithoutObject).toEqual(['TA__F02']);
     expect(r.ok).toBe(false);
+  });
+
+  it('modelo leve acima de 2 MB gera aviso, mas não reprova', () => {
+    const names = db.unitKeys.map((k) => `UNIT__${k}`);
+    const ok = compareModel(names, db, BASE_MODEL_BUDGET_BYTES);
+    expect(ok.overBaseBudget).toBe(false);
+    expect(ok.warnings).toEqual([]);
+
+    const heavy = compareModel(names, db, BASE_MODEL_BUDGET_BYTES + 1);
+    expect(heavy.overBaseBudget).toBe(true);
+    expect(heavy.warnings[0]).toMatch(/Modelo leve com 2\.00 MB/);
+    expect(heavy.ok).toBe(true);
+  });
+
+  it('camada de detalhes: não exige unidades, avisa se tiver, sem orçamento de 2 MB', () => {
+    const detail = compareModel(['VIS__VARANDAS', 'VIS__ENTORNO'], db, 5 * 1024 * 1024, 'detail');
+    expect(detail.ok).toBe(true);
+    expect(detail.unitsWithoutObject).toEqual([]);
+    expect(detail.overBaseBudget).toBe(false);
+    expect(detail.warnings).toEqual([]);
+
+    const withUnits = compareModel(['UNIT__TA__F01__U101'], db, 1000, 'detail');
+    expect(withUnits.warnings[0]).toMatch(/1 objetos UNIT__/);
   });
 
   it('reprova arquivo acima de 10 MB', () => {

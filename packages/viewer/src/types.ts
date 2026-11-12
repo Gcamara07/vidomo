@@ -21,8 +21,17 @@ export interface CameraPreset {
 }
 
 export interface ViewerManifest {
-  /** URL já resolvida pelo app (getAssetUrl() no apps/web). O viewer não monta URLs. */
+  /**
+   * Camada 1 (obrigatória): GLB leve — volumes das unidades, lajes e casca (até 2 MB).
+   * Torna o prédio interativo. URL já resolvida pelo app (getAssetUrl()); o viewer não monta URLs.
+   */
   modelUrl: string;
+  /**
+   * Camada 2 (opcional): GLB de detalhes, carregado depois que o prédio já está interativo.
+   * Só visual (fachada, varandas, entorno); não bloqueia a interação e, se falhar, o prédio
+   * segue só com o modelo leve.
+   */
+  detailModelUrl?: string;
   /** `default` é a câmera inicial; sem ela, o viewer enquadra o prédio sozinho. */
   cameras?: { default?: CameraPreset } & Record<string, CameraPreset | undefined>;
   objectKeyPrefixes?: Partial<ObjectKeyPrefixes>;

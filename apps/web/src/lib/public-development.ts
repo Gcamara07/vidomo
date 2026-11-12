@@ -8,7 +8,10 @@ import { UNIT_STATUSES, type UnitStatus, type UnitStatusMap } from '@vidomo/view
 export interface PublicDevelopment {
   slug: string;
   name: string;
+  /** GLB leve (camada 1). */
   model_path: string | null;
+  /** GLB de detalhes opcional (camada 2). */
+  detail_model_path: string | null;
 }
 
 export interface PublicUnit {

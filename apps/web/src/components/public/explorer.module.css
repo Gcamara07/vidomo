@@ -313,3 +313,76 @@
     background: transparent;
   }
 }
+
+/* ------------------------------------------------------- ?debug=1 (fps) */
+.debug {
+  position: absolute;
+  right: 12px;
+  bottom: max(32px, calc(env(safe-area-inset-bottom) + 24px));
+  z-index: 5;
+  width: 172px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-papel);
+  background: rgba(26, 36, 32, 0.86);
+  border: 1px solid var(--color-latao);
+}
+
+.debugRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.debugFps strong {
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--color-latao-claro);
+}
+
+.debug dl {
+  margin: 4px 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px 8px;
+}
+
+.debug dt {
+  opacity: 0.7;
+}
+
+.debug dd {
+  margin: 0;
+  text-align: right;
+}
+
+.debug .debugGpu {
+  grid-column: 1 / -1;
+  text-align: left;
+  font-size: 10px;
+  word-break: break-word;
+  opacity: 0.8;
+}
+
+.debugActions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.debugActions button {
+  flex: 1;
+  min-height: 30px;
+  font: inherit;
+  color: var(--color-nanquim);
+  background: var(--color-latao-claro);
+  border: 0;
+  cursor: pointer;
+}
+
+.debugActions button:last-child {
+  flex: 0 0 30px;
+}

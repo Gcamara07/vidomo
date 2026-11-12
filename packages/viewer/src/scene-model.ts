@@ -36,7 +36,10 @@ export interface BuildingModel {
   floors: ScenePart[];
   /** Torre, áreas comuns, visuais e objetos sem prefixo. */
   structure: ScenePart[];
+  /** Caixa de tudo. */
   bounds: Box3;
+  /** Caixa do prédio (unidades, andares, torre) — usada para enquadrar a câmera. */
+  focusBounds: Box3;
 }
 
 /** Sobe a hierarquia até achar um nome com prefixo conhecido (malha multi-primitiva vira grupo). */
@@ -96,7 +99,13 @@ export function extractBuilding(
   const px: ObjectKeyPrefixes = { ...DEFAULT_OBJECT_KEY_PREFIXES, ...prefixes };
   root.updateMatrixWorld(true);
 
-  const model: BuildingModel = { units: [], floors: [], structure: [], bounds: new Box3() };
+  const model: BuildingModel = {
+    units: [],
+    floors: [],
+    structure: [],
+    bounds: new Box3(),
+    focusBounds: new Box3(),
+  };
   const uvCache = new Map<string, BufferGeometry>();
   const tmpPos = new Vector3();
   const tmpQuat = new Quaternion();
@@ -137,8 +146,13 @@ export function extractBuilding(
     else model.structure.push(part);
 
     if (!geometry.boundingBox) geometry.computeBoundingBox();
-    model.bounds.union(box.copy(geometry.boundingBox!).applyMatrix4(matrix));
+    box.copy(geometry.boundingBox!).applyMatrix4(matrix);
+    model.bounds.union(box);
+    if (isUnit || parsed?.kind === 'floor' || parsed?.kind === 'tower')
+      model.focusBounds.union(box);
   });
 
+  // Sem objetos do prédio (ex.: modelo de detalhes), enquadra tudo.
+  if (model.focusBounds.isEmpty()) model.focusBounds.copy(model.bounds);
   return model;
 }

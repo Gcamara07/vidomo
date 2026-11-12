@@ -1,4 +1,6 @@
 'use client';
+// Só tipo: não puxa o supabase-js para o bundle inicial.
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UnitStatusMap } from '@vidomo/viewer/types';
 import { useEffect, useState } from 'react';
 import {
@@ -7,7 +9,9 @@ import {
   toStatusMap,
   type PublicUnit,
 } from './public-development';
-import { browserClient } from './supabase/browser';
+
+type Client = SupabaseClient;
+type Channel = ReturnType<Client['channel']>;
 
 export type LiveConnection = 'connecting' | 'live' | 'offline';
 
@@ -20,20 +24,31 @@ export type LiveConnection = 'connecting' | 'live' | 'offline';
  *   quando a rede volta.
  * - Mensagens que chegam durante uma releitura são reaplicadas sobre o resultado,
  *   para a foto do banco não sobrescrever uma mudança mais nova.
+ * - O supabase-js é importado sob demanda e só quando `enabled`: não entra no JS inicial
+ *   e não disputa banda com o three.js. O HTML já traz os status do servidor, e a releitura
+ *   ao conectar cobre o que mudou nesse intervalo.
  */
-export function useLiveUnitStatus(slug: string, initialUnits: PublicUnit[]) {
+export function useLiveUnitStatus(
+  slug: string,
+  initialUnits: PublicUnit[],
+  /** Só conecta quando true (a página adia até o prédio ficar interativo). */
+  enabled = true,
+) {
   const [units, setUnits] = useState(initialUnits);
   const [statusMap, setStatusMap] = useState<UnitStatusMap>(() => toStatusMap(initialUnits));
   const [connection, setConnection] = useState<LiveConnection>('connecting');
 
   useEffect(() => {
-    const client = browserClient();
+    if (!enabled) return;
+    let client: Client | null = null;
+    let channel: Channel | null = null;
     let disposed = false;
     let inFlight = false;
     let queued = false;
     let duringFetch: unknown[] = [];
 
     const resync = async () => {
+      if (!client) return; // ainda carregando o supabase-js; a assinatura relê ao conectar
       if (inFlight) {
         queued = true;
         return;
@@ -57,21 +72,26 @@ export function useLiveUnitStatus(slug: string, initialUnits: PublicUnit[]) {
       }
     };
 
-    const channel = client
-      .channel(`development:${slug}`, { config: { private: true } })
-      .on('broadcast', { event: 'unit_status' }, ({ payload }) => {
-        if (inFlight) duringFetch.push(payload);
-        setStatusMap((m) => applyStatusMessage(m, payload));
-      })
-      .subscribe((status) => {
-        if (disposed) return;
-        if (status === 'SUBSCRIBED') {
-          setConnection('live');
-          void resync();
-        } else {
-          setConnection(status === 'CLOSED' ? 'offline' : 'connecting');
-        }
-      });
+    void (async () => {
+      const { browserClient } = await import('./supabase/browser');
+      if (disposed) return;
+      client = browserClient();
+      channel = client
+        .channel(`development:${slug}`, { config: { private: true } })
+        .on('broadcast', { event: 'unit_status' }, ({ payload }) => {
+          if (inFlight) duringFetch.push(payload);
+          setStatusMap((m) => applyStatusMessage(m, payload));
+        })
+        .subscribe((status) => {
+          if (disposed) return;
+          if (status === 'SUBSCRIBED') {
+            setConnection('live');
+            void resync();
+          } else {
+            setConnection(status === 'CLOSED' ? 'offline' : 'connecting');
+          }
+        });
+    })();
 
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void resync();
@@ -87,9 +107,9 @@ export function useLiveUnitStatus(slug: string, initialUnits: PublicUnit[]) {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
-      void client.removeChannel(channel);
+      if (client && channel) void client.removeChannel(channel);
     };
-  }, [slug]);
+  }, [slug, enabled]);
 
   return { units, statusMap, connection };
 }

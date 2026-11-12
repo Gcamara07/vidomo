@@ -67,6 +67,11 @@ h3 {
   color: var(--color-primary);
 }
 
+/* Ênfase em itálico nos títulos usa o Fraunces itálico (carregado sob demanda). */
+:is(h1, h2, h3) :is(em, i) {
+  font-family: var(--font-fraunces-italic), var(--font-title);
+}
+
 code,
 .mono {
   font-family: var(--font-mono);

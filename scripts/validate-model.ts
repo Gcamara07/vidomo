@@ -1,26 +1,39 @@
 /**
  * Compara os objetos de um GLB com as unidades/andares do banco.
  *
- *   pnpm model:validate [arquivo.glb] [--slug residencial-vista] [--json]
+ *   pnpm model:validate [arquivo.glb] [--slug residencial-vista] [--layer base|detail] [--json]
  *
  * Lista unidades sem objeto, objetos sem unidade, nomes fora do padrão, duplicados e o
- * peso do arquivo (limite 10 MB). Sai com código 1 se houver problema bloqueante.
+ * peso do arquivo (limite 10 MB; aviso acima de 2 MB no modelo leve). Sai com código 1 se
+ * houver problema bloqueante. --layer detail valida o GLB de detalhes (sem exigir unidades).
  * Semente da validação do RF-A08.
  */
 import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createIO } from './lib/building';
-import { MAX_MODEL_BYTES, compareModel } from './lib/model-validation';
+import {
+  BASE_MODEL_BUDGET_BYTES,
+  MAX_MODEL_BYTES,
+  compareModel,
+  type ModelLayer,
+} from './lib/model-validation';
 import { developmentKeys, serviceClient } from './lib/supabase-env';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     slug: { type: 'string', default: 'residencial-vista' },
+    layer: { type: 'string', default: 'base' },
     json: { type: 'boolean', default: false },
   },
 });
+
+const layer = values.layer as ModelLayer;
+if (layer !== 'base' && layer !== 'detail') {
+  console.error('--layer deve ser base ou detail');
+  process.exit(1);
+}
 
 const file = resolve(positionals[0] ?? 'scripts/out/residencial-vista-test.glb');
 
@@ -34,7 +47,7 @@ async function main() {
   const { size } = await stat(file);
 
   const db = await developmentKeys(serviceClient(), values.slug!);
-  const report = compareModel(names, db, size);
+  const report = compareModel(names, db, size, layer);
 
   if (values.json) {
     console.log(JSON.stringify({ file, slug: values.slug, ...report }, null, 2));
@@ -47,7 +60,7 @@ async function main() {
     };
     const mb = (b: number) => (b / 1024 / 1024).toFixed(2);
 
-    console.log(`Modelo:  ${file}`);
+    console.log(`Modelo:  ${file} (camada ${layer === 'base' ? 'leve' : 'de detalhes'})`);
     console.log(`Banco:   ${db.development.name} (${values.slug})`);
     console.log(
       `Objetos: ${report.counts.unitObjects} unidades / ${report.counts.floorObjects} andares no GLB · ` +
@@ -60,11 +73,20 @@ async function main() {
     list('Andares sem objeto', report.floorsWithoutObject, false);
     list('Objetos de andar sem cadastro', report.objectsWithoutFloor, false);
     list('Objetos sem prefixo', report.unprefixedNames, false);
+    const sizeMark = report.overSizeLimit ? 'ERRO' : report.overBaseBudget ? 'aviso' : 'ok';
+    const budget =
+      layer === 'base'
+        ? `meta do modelo leve ${mb(BASE_MODEL_BUDGET_BYTES)} MB, limite ${mb(MAX_MODEL_BYTES)} MB`
+        : `limite ${mb(MAX_MODEL_BYTES)} MB`;
     console.log(
-      `  [${report.overSizeLimit ? 'ERRO' : 'ok'}] Peso: ${(size / 1024).toFixed(1)} KiB ` +
-        `(${mb(size)} MB de ${mb(MAX_MODEL_BYTES)} MB)`,
+      `  [${sizeMark}] Peso: ${(size / 1024).toFixed(1)} KiB (${mb(size)} MB; ${budget})`,
     );
-    console.log(report.ok ? 'Resultado: modelo compatível.' : 'Resultado: modelo com problemas.');
+    for (const w of report.warnings) console.log(`  [aviso] ${w}`);
+    console.log(
+      report.ok
+        ? `Resultado: modelo compatível${report.warnings.length ? ' (com avisos)' : ''}.`
+        : 'Resultado: modelo com problemas.',
+    );
   }
 
   process.exitCode = report.ok ? 0 : 1;

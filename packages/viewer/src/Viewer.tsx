@@ -6,7 +6,7 @@
  * MeshBasicMaterial sem luzes, sem sombras e sem pós-processamento.
  */
 import { Edges, OrbitControls, useGLTF } from '@react-three/drei';
-import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
+import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import {
   Component,
   Suspense,
@@ -15,6 +15,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
   type ReactNode,
 } from 'react';
@@ -33,13 +34,32 @@ export interface ViewerProps {
   selectedUnit?: string | null;
   /** Toque/clique numa unidade (object_key) ou fora delas (null). */
   onSelectUnit?: (objectKey: string | null) => void;
-  /** Modelo carregado e primeira cena montada. */
+  /** Modelo leve (obrigatório) carregado e primeira cena montada: o prédio já é interativo. */
   onReady?: () => void;
+  /** Falha no modelo leve (o prédio não aparece). */
   onError?: (error: Error) => void;
+  /** Modelo de detalhes (opcional) carregado e montado. */
+  onDetailReady?: () => void;
+  /** Falha no modelo de detalhes: o prédio segue funcionando só com o modelo leve. */
+  onDetailError?: (error: Error) => void;
+  /** Estatísticas de renderização a cada 1 s (para depuração/medição). */
+  onStats?: (stats: ViewerStats) => void;
+  /** Gira a câmera sozinho (útil para medir fps no aparelho). */
+  autoRotate?: boolean;
   className?: string;
   style?: CSSProperties;
   // TODO(modos): onSelectFloor / onModeChange (modo andar) e onCameraChange para estado
   // serializável de câmera — fora desta fatia.
+}
+
+export interface ViewerStats {
+  /** Quadros desenhados no último segundo (0 quando nada muda: frameloop sob demanda). */
+  fps: number;
+  drawCalls: number;
+  triangles: number;
+  dpr: number;
+  /** GPU informada pelo WebGL. */
+  renderer: string;
 }
 
 /** Deslocamento máximo (px) entre apertar e soltar para contar como toque, não arrasto. */
@@ -52,6 +72,10 @@ export function Viewer({
   onSelectUnit,
   onReady,
   onError,
+  onDetailReady,
+  onDetailError,
+  onStats,
+  autoRotate = false,
   className,
   style,
 }: ViewerProps) {
@@ -88,15 +112,19 @@ export function Viewer({
               selectedUnit={selectedUnit}
               onSelectUnit={onSelectUnit}
               onReady={onReady}
+              onDetailReady={onDetailReady}
+              onDetailError={onDetailError}
+              autoRotate={autoRotate}
             />
           </Suspense>
         </ErrorBoundary>
+        {onStats && <FrameStats onStats={onStats} />}
       </Canvas>
     </div>
   );
 }
 
-/** Pré-carrega o GLB (ex.: enquanto a página busca os status). */
+/** Pré-carrega o GLB leve (ex.: enquanto a página busca os status). */
 export function preloadModel(url: string) {
   useGLTF.preload(url, false, true);
 }
@@ -107,9 +135,21 @@ interface BuildingProps {
   selectedUnit: string | null;
   onSelectUnit?: (objectKey: string | null) => void;
   onReady?: () => void;
+  onDetailReady?: () => void;
+  onDetailError?: (error: Error) => void;
+  autoRotate: boolean;
 }
 
-function Building({ manifest, unitStatus, selectedUnit, onSelectUnit, onReady }: BuildingProps) {
+function Building({
+  manifest,
+  unitStatus,
+  selectedUnit,
+  onSelectUnit,
+  onReady,
+  onDetailReady,
+  onDetailError,
+  autoRotate,
+}: BuildingProps) {
   // useDraco = false (não usamos Draco; evita baixar o decoder), useMeshopt = true.
   const gltf = useGLTF(manifest.modelUrl, false, true);
   const prefixesKey = JSON.stringify(manifest.objectKeyPrefixes ?? {});
@@ -130,23 +170,44 @@ function Building({ manifest, unitStatus, selectedUnit, onSelectUnit, onReady }:
   useLayoutEffect(() => {
     onReadyRef.current = onReady;
   });
+  // Camada 2 (detalhes) só começa depois que o modelo leve está na tela: não disputa
+  // banda nem CPU com o que torna o prédio interativo.
+  const [detailStarted, setDetailStarted] = useState(false);
   useEffect(() => {
     // Depois do commit; o próximo frame já desenha o prédio.
-    const id = requestAnimationFrame(() => onReadyRef.current?.());
+    const id = requestAnimationFrame(() => {
+      onReadyRef.current?.();
+      setDetailStarted(true);
+    });
     return () => cancelAnimationFrame(id);
   }, [model]);
 
+  // Enquadra o prédio (unidades, lajes, torre), não o terreno ou o entorno.
   const bounds = useMemo(
     () => ({
-      min: model.bounds.min.toArray() as Vec3,
-      max: model.bounds.max.toArray() as Vec3,
+      min: model.focusBounds.min.toArray() as Vec3,
+      max: model.focusBounds.max.toArray() as Vec3,
     }),
     [model],
   );
 
   return (
     <>
-      <CameraRig bounds={bounds} manifest={manifest} />
+      <CameraRig bounds={bounds} manifest={manifest} autoRotate={autoRotate} />
+      {detailStarted && manifest.detailModelUrl && (
+        <ErrorBoundary
+          onError={onDetailError ?? ((e) => console.warn('[viewer] modelo de detalhes falhou:', e))}
+        >
+          <Suspense fallback={null}>
+            <DetailLayer
+              url={manifest.detailModelUrl}
+              manifest={manifest}
+              materials={materials}
+              onReady={onDetailReady}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
       {model.structure.map((part, i) => (
         <StaticPart key={`s${i}`} part={part} material={materials.structure} />
       ))}
@@ -165,6 +226,116 @@ function Building({ manifest, unitStatus, selectedUnit, onSelectUnit, onReady }:
       ))}
     </>
   );
+}
+
+/**
+ * Camada 2: modelo de detalhes (fachada, varandas, entorno). Só visual: não seleciona e
+ * não bloqueia o toque nas unidades atrás dele. Unidades neste arquivo são ignoradas — a
+ * seleção vem sempre do modelo leve.
+ */
+function DetailLayer({
+  url,
+  manifest,
+  materials,
+  onReady,
+}: {
+  url: string;
+  manifest: ViewerManifest;
+  materials: ViewerMaterials;
+  onReady?: () => void;
+}) {
+  const gltf = useGLTF(url, false, true);
+  const prefixesKey = JSON.stringify(manifest.objectKeyPrefixes ?? {});
+  const model = useMemo(
+    () => extractBuilding(gltf.scene, manifest.objectKeyPrefixes),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prefixesKey cobre o objeto
+    [gltf.scene, prefixesKey],
+  );
+
+  const onReadyRef = useRef(onReady);
+  useLayoutEffect(() => {
+    onReadyRef.current = onReady;
+  });
+  useEffect(() => {
+    if (model.units.length > 0) {
+      console.warn(
+        `[viewer] o modelo de detalhes tem ${model.units.length} objetos UNIT__; eles são ignorados.`,
+      );
+    }
+    const id = requestAnimationFrame(() => onReadyRef.current?.());
+    return () => cancelAnimationFrame(id);
+  }, [model]);
+
+  return (
+    <>
+      {model.structure.map((part, i) => (
+        <DetailPart key={`d${i}`} part={part} material={materials.structure} />
+      ))}
+      {model.floors.map((part, i) => (
+        <DetailPart key={`df${i}`} part={part} material={materials.slab} />
+      ))}
+    </>
+  );
+}
+
+const noRaycast = () => null;
+
+const DetailPart = memo(function DetailPart({
+  part,
+  material,
+}: {
+  part: ScenePart;
+  material: Material;
+}) {
+  return (
+    <mesh
+      geometry={part.geometry}
+      matrix={part.matrix}
+      matrixAutoUpdate={false}
+      material={material}
+      raycast={noRaycast}
+    >
+      <Edges color={BRAND.musgo} lineWidth={1} threshold={30} />
+    </mesh>
+  );
+});
+
+/** Conta quadros desenhados (frameloop sob demanda: só conta quando algo muda). */
+function FrameStats({ onStats }: { onStats: (stats: ViewerStats) => void }) {
+  const gl = useThree((s) => s.gl);
+  const frames = useRef(0);
+  const onStatsRef = useRef(onStats);
+  useLayoutEffect(() => {
+    onStatsRef.current = onStats;
+  });
+  useFrame(() => {
+    frames.current++;
+  });
+
+  useEffect(() => {
+    const ctx = gl.getContext();
+    const info = ctx.getExtension('WEBGL_debug_renderer_info');
+    const renderer = String(
+      info ? ctx.getParameter(info.UNMASKED_RENDERER_WEBGL) : ctx.getParameter(ctx.RENDERER),
+    );
+    let last = performance.now();
+    const id = setInterval(() => {
+      const now = performance.now();
+      const fps = (frames.current * 1000) / (now - last);
+      frames.current = 0;
+      last = now;
+      onStatsRef.current({
+        fps,
+        drawCalls: gl.info.render.calls,
+        triangles: gl.info.render.triangles,
+        dpr: gl.getPixelRatio(),
+        renderer,
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [gl]);
+
+  return null;
 }
 
 const stop = (e: ThreeEvent<MouseEvent>) => e.stopPropagation();
@@ -243,9 +414,11 @@ const UnitMesh = memo(function UnitMesh({
 function CameraRig({
   bounds,
   manifest,
+  autoRotate,
 }: {
   bounds: { min: Vec3; max: Vec3 };
   manifest: ViewerManifest;
+  autoRotate: boolean;
 }) {
   const get = useThree((s) => s.get);
   const controls = useRef<OrbitControlsImpl>(null);
@@ -279,6 +452,8 @@ function CameraRig({
       target={framing.target}
       enableDamping
       dampingFactor={0.12}
+      autoRotate={autoRotate}
+      autoRotateSpeed={4}
       minDistance={framing.minDistance}
       maxDistance={framing.maxDistance}
       minPolarAngle={framing.minPolarAngle}

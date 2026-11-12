@@ -34,6 +34,20 @@ describe('extractBuilding', () => {
     expect(model.bounds.max.x).toBeCloseTo(5.5);
   });
 
+  it('enquadra só o prédio (ignora terreno/entorno), ou tudo se não houver prédio', () => {
+    const root = new Group();
+    const unit = mesh('UNIT__TA__F01__U101', 2, 2, 2);
+    const terrain = mesh('VIS__TERRENO', 200, 0.1, 200);
+    root.add(unit, terrain);
+    const model = extractBuilding(root);
+    expect(model.bounds.max.x).toBeCloseTo(100);
+    expect(model.focusBounds.max.x).toBeCloseTo(1);
+
+    const onlyDetail = new Group();
+    onlyDetail.add(mesh('VIS__VARANDAS', 10, 1, 1));
+    expect(extractBuilding(onlyDetail).focusBounds.max.x).toBeCloseTo(5);
+  });
+
   it('respeita prefixos do manifesto', () => {
     const root = new Group();
     root.add(mesh('U-TA__F01__U101'));

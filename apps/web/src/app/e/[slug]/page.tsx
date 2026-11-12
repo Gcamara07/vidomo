@@ -12,6 +12,8 @@ export const dynamic = 'force-dynamic';
 
 interface PageProps {
   params: Promise<{ slug: string }>;
+  /** ?debug=1 mostra o contador de fps (medição no aparelho). */
+  searchParams: Promise<{ debug?: string }>;
 }
 
 const getDevelopment = cache((slug: string) => fetchPublicDevelopment(publicServerClient(), slug));
@@ -27,8 +29,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function DevelopmentPage({ params }: PageProps) {
+export default async function DevelopmentPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
+  const { debug } = await searchParams;
   const [development, units] = await Promise.all([
     getDevelopment(slug),
     fetchPublicUnits(publicServerClient(), slug),
@@ -36,7 +39,11 @@ export default async function DevelopmentPage({ params }: PageProps) {
   if (!development) notFound();
 
   const modelUrl = development.model_path ? getAssetUrl(development.model_path) : null;
-  // Começa a baixar o GLB junto com o HTML, em paralelo ao JS do three.js.
+  const detailModelUrl = development.detail_model_path
+    ? getAssetUrl(development.detail_model_path)
+    : null;
+  // Só o GLB leve (camada 1) começa junto com o HTML. O de detalhes não é pré-carregado:
+  // o viewer o pede depois que o prédio já está interativo, para não disputar banda.
   if (modelUrl) preload(modelUrl, { as: 'fetch', crossOrigin: 'anonymous' });
 
   return (
@@ -44,7 +51,9 @@ export default async function DevelopmentPage({ params }: PageProps) {
       slug={development.slug}
       name={development.name}
       modelUrl={modelUrl}
+      detailModelUrl={detailModelUrl}
       initialUnits={units}
+      debug={debug === '1'}
     />
   );
 }

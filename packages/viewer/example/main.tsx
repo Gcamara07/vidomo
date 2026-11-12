@@ -2,7 +2,8 @@
  * Exemplo isolado do <Viewer> com status falsos (sem Supabase).
  *   pnpm --filter @vidomo/viewer example
  * Query string:
- *   ?model=<url>   outro GLB (padrão: /residencial-vista-test.glb de scripts/out)
+ *   ?model=<url>   GLB leve (padrão: /residencial-vista-test.glb de scripts/out)
+ *   ?detail=<url>  GLB de detalhes (ex.: /residencial-vista-test-detalhes.glb)
  */
 import { StrictMode, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -22,6 +23,8 @@ import {
 const params = new URLSearchParams(location.search);
 const manifest: ViewerManifest = {
   modelUrl: params.get('model') ?? '/residencial-vista-test.glb',
+  // Camada 2 opcional: ?detail=/residencial-vista-test-detalhes.glb
+  detailModelUrl: params.get('detail') ?? undefined,
 };
 
 /** 40 unidades falsas: torre TA, 10 andares × 4. */

@@ -1,113 +1,179 @@
 # Vidomo
 
-Fatia vertical: prédio 3D no celular cujas unidades mudam de cor em tempo real quando o
-status muda no banco. Contexto e regras do projeto em [CLAUDE.md](CLAUDE.md).
+Fatia vertical da Vidomo: um prédio 3D no celular cujas unidades mudam de cor em tempo
+real quando o status muda no banco. Contexto, regras e marca em [CLAUDE.md](CLAUDE.md).
 
-> README em construção — completado na Etapa 7.
+```
+apps/web          Next.js 16 (App Router): /e/[slug] (público), /login, /painel/dev-status
+packages/viewer   <Viewer> em React Three Fiber + drei (não conhece o banco) + exemplo isolado
+supabase/         migrations SQL, seed, testes de RLS/Realtime (Vitest)
+scripts/          gerar/validar/enviar o GLB de teste, medir a demo
+```
 
-## Pré-requisitos
+## 1. Pré-requisitos
 
 - Node 22+ e pnpm 10 (`npm i -g pnpm@10`)
 - Docker Desktop aberto (o Supabase local roda em containers)
+- Chrome ou Edge instalado (só para `pnpm measure`)
 - O Supabase CLI vem como dependência do projeto: `pnpm exec supabase …`
 
-## Subir o ambiente
+## 2. Subir o ambiente
 
 ```bash
 pnpm install
-pnpm db:start   # sobe o Supabase local (1ª vez baixa as imagens)
-pnpm db:reset   # aplica migrations + seed
+pnpm db:start        # sobe o Supabase local (na 1ª vez baixa as imagens)
+pnpm db:reset        # aplica migrations + seed
+pnpm model:generate  # gera o prédio de teste (scripts/out/residencial-vista-test.glb)
+pnpm model:upload    # valida e envia o GLB ao bucket models
 ```
 
-`pnpm exec supabase status` mostra URL, chaves e o Studio (http://127.0.0.1:54323).
-Copie `.env.example` para `apps/web/.env.local` e preencha com esses valores.
+Crie `apps/web/.env.local` a partir do [.env.example](.env.example) com os valores de
+`pnpm exec supabase status` (URL da API e chave anon). A service_role não vai para o app.
 
-## Usuários de desenvolvimento (somente local)
+```bash
+pnpm dev             # http://localhost:3000/e/residencial-vista
+```
+
+`pnpm db:reset` apaga os objetos do Storage: depois de um reset, rode `pnpm model:upload`
+de novo. O Studio fica em http://127.0.0.1:54323.
+
+### Usuários de desenvolvimento (somente local)
 
 | Organização         | E-mail               | Senha            | Papel |
 | ------------------- | -------------------- | ---------------- | ----- |
 | Construtora Exemplo | `admin@exemplo.test` | `vidomo-dev-123` | admin |
 | Construtora Teste   | `admin@teste.test`   | `vidomo-dev-123` | admin |
 
-Dados do seed:
-
 - **Residencial Vista** (`residencial-vista`, publicado) — Construtora Exemplo, torre TA,
   10 andares × 4 unidades (101–104 … 1001–1004), plantas Tipo A/B alternadas, os 5 status.
 - **Residencial Teste** (`residencial-teste`, rascunho) — Construtora Teste, 4 unidades.
 
-## Prédio de teste (GLB)
+## 3. Prédio de teste (GLB) e as duas camadas
+
+O viewer carrega o prédio em duas camadas:
+
+| Camada                  | Coluna                           | Conteúdo                             | Papel                                                                       |
+| ----------------------- | -------------------------------- | ------------------------------------ | --------------------------------------------------------------------------- |
+| 1 — leve (obrigatória)  | `developments.model_path`        | volumes `UNIT__`, lajes, casca       | torna o prédio interativo; meta de até **2 MB**                             |
+| 2 — detalhes (opcional) | `developments.detail_model_path` | fachada, varandas, entorno (`VIS__`) | carregada depois, sem bloquear; se falhar, o prédio segue só com a camada 1 |
 
 ```bash
-pnpm model:generate   # gera scripts/out/residencial-vista-test.glb (Meshopt)
-pnpm model:validate   # compara objetos do GLB × unidades/andares do banco + peso
+pnpm model:generate   # camada leve: torre, 10 lajes, 40 unidades; Meshopt + quantização
+pnpm model:validate   # objetos do GLB × unidades/andares do banco, nomes, duplicados, peso
 pnpm model:upload     # valida e envia ao bucket models (caminho = developments.model_path)
 ```
 
-`pnpm db:reset` apaga os objetos do Storage: depois de um reset, rode `pnpm model:upload` de novo.
-`model:validate` aceita outro arquivo e empreendimento: `pnpm model:validate caminho.glb --slug outro`.
+- `pnpm model:validate caminho.glb --slug outro` valida outro arquivo; sai com código 1 se
+  houver problema. Acima de **2 MB** no modelo leve, alerta (sem reprovar); acima de 10 MB, reprova.
+- `--layer detail` valida/envia o GLB de detalhes (não exige unidades; avisa se tiver `UNIT__`).
+- `pnpm model:generate --layer detail` gera varandas e guarda-corpos de teste.
+- `--pad-mb N` acrescenta uma malha plana "pesada" até ~N MB, para simular o peso de um
+  modelo real (ex.: `--out scripts/out/residencial-vista-1.5mb.glb --pad-mb 1.5`).
 
-## Visualizador isolado (`packages/viewer`)
-
-```bash
-pnpm model:generate                     # o exemplo usa scripts/out/residencial-vista-test.glb
-pnpm --filter @vidomo/viewer example    # http://localhost:5174 e na rede local (porta 5174)
-```
-
-Exemplo com status falsos: tocar numa unidade seleciona; "Mudar um status" e "Automático"
-trocam cores sem recarregar o modelo. `?model=<url>` carrega outro GLB.
-
-**Celular na rede local:** abra `http://<IP-do-PC>:5174` (o Vite lista os endereços ao subir).
-No Windows, a porta precisa estar liberada no firewall. Num PowerShell **como administrador**:
-
-```powershell
-New-NetFirewallRule -DisplayName "Vidomo dev (5174, 3000, 54321)" -Direction Inbound -Protocol TCP -LocalPort 5174,3000,54321 -RemoteAddress LocalSubnet -Action Allow -Profile Private,Public
-```
-
-Para remover depois: `Remove-NetFirewallRule -DisplayName "Vidomo dev (5174, 3000, 54321)"`.
-
-## Página pública da demo
+## 4. Testes
 
 ```bash
-pnpm dev   # Next em http://localhost:3000 e na rede local (porta 3000)
+pnpm test:unit  # sem banco: viewer, scripts, web
+pnpm test:db    # isolamento multiempresa, acesso anônimo, histórico e Realtime
+pnpm test       # tudo (precisa do Supabase local rodando)
+pnpm lint && pnpm typecheck
 ```
 
-Abra `/e/residencial-vista`. O HTML já chega com nome, legenda com contagens e um
-placeholder; o three.js e o GLB baixam depois (Viewer com `next/dynamic`, sem SSR; GLB com
-preload). O status chega por Broadcast (`development:<slug>`) e a página relê tudo pela
-função pública ao conectar/reconectar, ao voltar do segundo plano e quando a rede volta.
+O teste de isolamento (`supabase/tests/isolation.test.ts`) roda contra o Supabase local:
+o admin da organização B tenta ler e alterar unidades da A por SELECT/UPDATE/DELETE/INSERT
+diretos e pela RPC, e falha sempre; o anônimo só lê pela função pública.
 
-**No celular**, `127.0.0.1` é o próprio celular: em `apps/web/.env.local` use o IP da
-máquina em `NEXT_PUBLIC_SUPABASE_URL` (ex.: `http://192.168.0.10:54321`) e libere também a
-porta **54321** no firewall (já incluída na regra acima).
+## 5. Teste de ponta a ponta no celular
 
-## Painel mínimo de status (teste de ponta a ponta)
+### Rede local (recomendado)
 
-1. `pnpm dev` e abra `http://localhost:3000/painel/dev-status` (pede login).
-2. Entre com um usuário de desenvolvimento (tabela acima). A lista mostra só as unidades
-   da organização do usuário (RLS).
-3. Abra a demo no celular: `http://<IP-do-PC>:3000/e/residencial-vista`.
-4. Mude um status no painel: a cor muda no celular em menos de 3 s. A mudança passa por
+1. Descubra o IP do PC na rede (`ipconfig`), ex.: `192.168.0.10`.
+2. Em `apps/web/.env.local`, use esse IP na URL do Supabase — no celular, `127.0.0.1`
+   é o próprio celular:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=http://192.168.0.10:54321
+   ```
+3. No Windows, libere as portas no firewall (PowerShell **como administrador**):
+   ```powershell
+   New-NetFirewallRule -DisplayName "Vidomo dev (5174, 3000, 54321)" -Direction Inbound -Protocol TCP -LocalPort 5174,3000,54321 -RemoteAddress LocalSubnet -Action Allow -Profile Private,Public
+   ```
+   Para remover depois: `Remove-NetFirewallRule -DisplayName "Vidomo dev (5174, 3000, 54321)"`.
+4. `pnpm dev` (o Next escuta na rede) e, com o celular na mesma rede, abra
+   `http://192.168.0.10:3000/e/residencial-vista`.
+5. No PC, abra `http://localhost:3000/painel/dev-status`, entre com `admin@exemplo.test`
+   e mude um status: a cor muda no celular em menos de 3 s. A mudança passa por
    `set_unit_status` e fica em `unit_status_history` com o usuário e o motivo.
 
-O painel também se atualiza sozinho quando outro usuário muda um status (`postgres_changes`).
+### Túnel (celular fora da rede)
 
-## Testes
+Funciona com qualquer túnel HTTP (ex.: `cloudflared tunnel --url http://localhost:3000`),
+mas são **dois** túneis: um para o Next (3000) e outro para o Supabase (54321), porque o
+navegador fala direto com o Supabase (GLB, RPC e WebSocket do Realtime). Use a URL pública
+do túnel do Supabase em `NEXT_PUBLIC_SUPABASE_URL` e reinicie o `pnpm dev`. Não exponha o
+túnel do Supabase por mais tempo que o teste: ele dá acesso à API local.
+
+### Visualizador isolado
 
 ```bash
-pnpm test:unit  # testes que não precisam de banco
-pnpm test:db    # isolamento multiempresa e Realtime (Supabase local rodando)
-pnpm test       # tudo
+pnpm --filter @vidomo/viewer example   # http://localhost:5174 e na rede local
 ```
 
-## Banco — visão rápida
+Status falsos, sem Supabase: tocar seleciona; "Mudar um status" e "Automático" trocam cores
+sem recarregar o modelo. `?model=<url>` carrega outro GLB.
 
-- Migrations em `supabase/migrations`, seed em `supabase/seed.sql`.
-- RLS em todas as tabelas; `anon` não tem acesso direto a nenhuma tabela.
-- `units.status` só muda por `set_unit_status(p_unit_id, p_new_status, p_reason)`.
-- `unit_status_history` é preenchida por trigger e não aceita UPDATE/DELETE/TRUNCATE.
-- Leitura pública: `public_development(p_slug)` e `public_development_units(p_slug)` (sem preço).
-- Realtime:
-  - painel (autenticado): `postgres_changes` em `units`, filtrado pela RLS;
-  - página pública: Broadcast privado no tópico `development:<slug>` com
-    `{object_key, status}`. Só o trigger do banco publica; o anônimo só recebe, e só de
-    empreendimento publicado.
+## 6. Medições (build de produção, 4G lento)
+
+```bash
+pnpm --filter @vidomo/web build
+pnpm --filter @vidomo/web exec next start -p 3100
+pnpm measure            # outra aba; --runs 5, --network fast4g, --url …, --browser <exe>
+```
+
+Usa o Chrome/Edge instalado e aplica, pelo protocolo do DevTools, o mesmo perfil "Slow 4G"
+do menu de throttling (~1,44 Mbit/s, 562 ms de latência; `--network fast4g` usa o "Fast 4G"),
+cache desligado e tela 360×800 @2x. Mede FCP, tempo até o prédio ficar interativo
+(`vidomo:viewer-ready`), até os detalhes entrarem (`vidomo:detail-ready`), JS da página, do
+viewer e do supabase-js (gzip), GLBs e fps girando o prédio. A GPU é a do PC.
+
+**fps no celular:** abra a demo com `?debug=1` (ex.: `http://<IP>:3000/e/residencial-vista?debug=1`).
+Aparece um contador com fps, média e mínimo enquanto o prédio gira, tempos até interativo e
+detalhes, draw calls, triângulos e a GPU. O viewer só desenha quando algo muda: gire com o
+dedo ou toque em "Girar sozinho".
+
+**Simular um modelo pesado:**
+
+```bash
+pnpm model:generate --out scripts/out/residencial-vista-1.5mb.glb --pad-mb 1.5
+pnpm model:generate --layer detail --pad-mb 4
+docker exec supabase_db_vidomo psql -U postgres -c "update developments set detail_model_path='residencial-vista/residencial-vista-test-detalhes.glb' where slug='residencial-vista'"
+pnpm model:upload scripts/out/residencial-vista-1.5mb.glb
+pnpm model:upload scripts/out/residencial-vista-test-detalhes.glb --layer detail
+pnpm measure
+pnpm db:reset && pnpm model:upload   # volta ao prédio leve
+```
+
+## 7. Como funciona (resumo)
+
+- **Banco** (`supabase/migrations`): toda tabela de cliente tem `organization_id` e RLS;
+  FKs compostas impedem apontar para outra organização. `anon` não tem acesso direto a
+  nenhuma tabela.
+- **Status**: `units.status` não tem GRANT de UPDATE; só muda por
+  `set_unit_status(p_unit_id, p_new_status, p_reason)`, que valida papel, trava a linha
+  (`FOR UPDATE`) e grava `unit_status_history` por trigger (imutável).
+- **Leitura pública**: `public_development(slug)` e `public_development_units(slug)` — só
+  empreendimento publicado, sem preço.
+- **Realtime**: a página pública assina o Broadcast privado `development:<slug>` (só o
+  trigger publica `{object_key, status}`; o anônimo só recebe) e relê tudo ao
+  conectar/reconectar, ao voltar do segundo plano e quando a rede volta. O painel usa
+  `postgres_changes` em `units`, filtrado pela RLS.
+- **Página pública**: o HTML já traz nome, legenda com contagens e um placeholder. O
+  chunk do three.js é pré-carregado em paralelo ao JS da página (o `<Viewer>` só monta no
+  navegador), o GLB leve também; o de detalhes só depois do prédio interativo. O supabase-js
+  (tempo real) é importado sob demanda e conecta depois que o prédio fica interativo (ou em
+  6 s); as fontes pré-carregadas são só as da primeira tela.
+- **Arquivos 3D**: sempre via `getAssetUrl()` (bucket público `models`).
+
+Fora desta fatia (com TODOs no código): leads, reservas com prazo (`reserve_unit`),
+quiosque, panoramas 360°, admin completo, subdomínios e tema por organização, regras finas
+de transição de status (PRD 6.1), preço conforme `price_display`, URLs assinadas para
+modelos de rascunho.

@@ -42,7 +42,7 @@ export function serviceClient(): SupabaseClient {
 export async function developmentKeys(client: SupabaseClient, slug: string) {
   const { data: dev, error } = await client
     .from('developments')
-    .select('id, name, model_path')
+    .select('id, name, model_path, detail_model_path')
     .eq('slug', slug)
     .maybeSingle();
   if (error) throw error;
@@ -56,7 +56,12 @@ export async function developmentKeys(client: SupabaseClient, slug: string) {
   if (floors.error) throw floors.error;
 
   return {
-    development: dev as { id: string; name: string; model_path: string | null },
+    development: dev as {
+      id: string;
+      name: string;
+      model_path: string | null;
+      detail_model_path: string | null;
+    },
     unitKeys: units.data.map((u) => u.object_key as string),
     floorKeys: floors.data.map((f) => f.object_key as string),
   };

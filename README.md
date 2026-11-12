@@ -35,6 +35,17 @@ Dados do seed:
   10 andares × 4 unidades (101–104 … 1001–1004), plantas Tipo A/B alternadas, os 5 status.
 - **Residencial Teste** (`residencial-teste`, rascunho) — Construtora Teste, 4 unidades.
 
+## Prédio de teste (GLB)
+
+```bash
+pnpm model:generate   # gera scripts/out/residencial-vista-test.glb (Meshopt)
+pnpm model:validate   # compara objetos do GLB × unidades/andares do banco + peso
+pnpm model:upload     # valida e envia ao bucket models (caminho = developments.model_path)
+```
+
+`pnpm db:reset` apaga os objetos do Storage: depois de um reset, rode `pnpm model:upload` de novo.
+`model:validate` aceita outro arquivo e empreendimento: `pnpm model:validate caminho.glb --slug outro`.
+
 ## Testes
 
 ```bash

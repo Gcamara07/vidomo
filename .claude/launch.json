@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "viewer-example",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@vidomo/viewer", "example"],
+      "port": 5174
+    }
+  ]
+}

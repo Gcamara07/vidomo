@@ -1,28 +1,24 @@
 /**
  * @vidomo/viewer — visualizador 3D desacoplado (regra 5 do CLAUDE.md).
  * Não importa Supabase nem conhece o banco: entrada = manifesto + mapa de status,
- * saída = eventos. O componente <Viewer> chega na Etapa 4.
+ * saída = eventos.
  */
-
-export const UNIT_STATUSES = [
-  'available',
-  'reserved',
-  'negotiating',
-  'sold',
-  'unavailable',
-] as const;
-
-export type UnitStatus = (typeof UNIT_STATUSES)[number];
-
-/** object_key (nome do objeto sem o prefixo de tipo) → status. */
-export type UnitStatusMap = Record<string, UnitStatus>;
-
-export interface ViewerManifest {
-  /** URL já resolvida pelo app via getAssetUrl(). */
-  modelUrl: string;
-  cameras?: Record<
-    string,
-    { position: [number, number, number]; target: [number, number, number] }
-  >;
-  objectKeyPrefixes?: Partial<Record<'unit' | 'floor' | 'tower' | 'amenity' | 'visual', string>>;
-}
+export { Viewer, PAPER_BACKGROUND, preloadModel, type ViewerProps } from './Viewer';
+export {
+  UNIT_STATUSES,
+  type CameraPreset,
+  type UnitStatus,
+  type UnitStatusMap,
+  type Vec3,
+  type ViewerManifest,
+} from './types';
+export {
+  BRAND,
+  SELECTED_APPEARANCE,
+  STATUS_APPEARANCE,
+  STATUS_LABELS,
+  unitAppearance,
+  type UnitAppearance,
+  type UnitFill,
+} from './styles';
+export * from './naming';

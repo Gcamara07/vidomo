@@ -46,6 +46,25 @@ pnpm model:upload     # valida e envia ao bucket models (caminho = developments.
 `pnpm db:reset` apaga os objetos do Storage: depois de um reset, rode `pnpm model:upload` de novo.
 `model:validate` aceita outro arquivo e empreendimento: `pnpm model:validate caminho.glb --slug outro`.
 
+## Visualizador isolado (`packages/viewer`)
+
+```bash
+pnpm model:generate                     # o exemplo usa scripts/out/residencial-vista-test.glb
+pnpm --filter @vidomo/viewer example    # http://localhost:5174 e na rede local (porta 5174)
+```
+
+Exemplo com status falsos: tocar numa unidade seleciona; "Mudar um status" e "Automático"
+trocam cores sem recarregar o modelo. `?model=<url>` carrega outro GLB.
+
+**Celular na rede local:** abra `http://<IP-do-PC>:5174` (o Vite lista os endereços ao subir).
+No Windows, a porta precisa estar liberada no firewall. Num PowerShell **como administrador**:
+
+```powershell
+New-NetFirewallRule -DisplayName "Vidomo dev (5174, 3000)" -Direction Inbound -Protocol TCP -LocalPort 5174,3000 -RemoteAddress LocalSubnet -Action Allow -Profile Private,Public
+```
+
+Para remover depois: `Remove-NetFirewallRule -DisplayName "Vidomo dev (5174, 3000)"`.
+
 ## Testes
 
 ```bash

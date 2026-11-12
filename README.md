@@ -80,6 +80,17 @@ função pública ao conectar/reconectar, ao voltar do segundo plano e quando a 
 máquina em `NEXT_PUBLIC_SUPABASE_URL` (ex.: `http://192.168.0.10:54321`) e libere também a
 porta **54321** no firewall (já incluída na regra acima).
 
+## Painel mínimo de status (teste de ponta a ponta)
+
+1. `pnpm dev` e abra `http://localhost:3000/painel/dev-status` (pede login).
+2. Entre com um usuário de desenvolvimento (tabela acima). A lista mostra só as unidades
+   da organização do usuário (RLS).
+3. Abra a demo no celular: `http://<IP-do-PC>:3000/e/residencial-vista`.
+4. Mude um status no painel: a cor muda no celular em menos de 3 s. A mudança passa por
+   `set_unit_status` e fica em `unit_status_history` com o usuário e o motivo.
+
+O painel também se atualiza sozinho quando outro usuário muda um status (`postgres_changes`).
+
 ## Testes
 
 ```bash

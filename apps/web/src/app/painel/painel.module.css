@@ -1,0 +1,177 @@
+/* Painel mínimo (login + dev-status). */
+
+.page {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.pageHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-musgo);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-cinza-quente);
+}
+
+.pageTitle {
+  margin: 2px 0 4px;
+  font-size: 30px;
+}
+
+.muted {
+  color: var(--color-cinza-quente);
+  font-size: 13px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.error {
+  display: block;
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-erro);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 20px;
+  margin: 20px 0 12px;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-cinza-quente);
+}
+
+.field input {
+  font: inherit;
+  font-size: 15px;
+  color: var(--color-nanquim);
+  min-width: 240px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--color-areia);
+}
+
+.field input:focus {
+  outline: 2px solid var(--color-latao);
+  outline-offset: 0;
+  border-color: var(--color-musgo);
+}
+
+.primary,
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 14px;
+  text-decoration: none;
+  border: 1px solid var(--color-musgo);
+  cursor: pointer;
+}
+
+.primary {
+  color: var(--color-papel);
+  background: var(--color-musgo);
+}
+
+.secondary {
+  color: var(--color-musgo);
+  background: transparent;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--color-cinza-quente);
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--color-musgo);
+}
+
+.table td {
+  padding: 6px;
+  border-bottom: 1px solid var(--color-linho);
+  vertical-align: middle;
+}
+
+.table tr[data-flash] td {
+  background: rgba(176, 141, 87, 0.16);
+  transition: background 0.2s;
+}
+
+.statusCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusCell select {
+  font: inherit;
+  font-size: 14px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-areia);
+  background: #fff;
+}
+
+/* Login */
+.loginWrap {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.loginCard {
+  width: min(360px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 28px 24px;
+  border: 1px solid var(--color-musgo);
+  background: var(--color-papel);
+}
+
+.loginCard .field input {
+  min-width: 0;
+  width: 100%;
+}
+
+.loginTitle {
+  margin: 0 0 4px;
+  font-size: 28px;
+}
+
+@media (max-width: 600px) {
+  .table th:nth-child(3),
+  .table td:nth-child(3),
+  .table th:nth-child(5),
+  .table td:nth-child(5) {
+    display: none;
+  }
+}

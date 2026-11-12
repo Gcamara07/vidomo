@@ -1,0 +1,315 @@
+/* Página pública do empreendimento.
+ * Celular: prédio em tela cheia, cabeçalho + legenda por cima, ficha como folha inferior.
+ * Desktop (≥ 900 px): prédio à esquerda, painel lateral de 360 px à direita. */
+
+.root {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--color-papel);
+}
+
+/* ---------------------------------------------------------------- palco 3D */
+.stage {
+  position: absolute;
+  inset: 0;
+}
+
+.viewer {
+  position: absolute;
+  inset: 0;
+}
+
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  background-color: var(--color-papel);
+  background-image:
+    linear-gradient(rgba(35, 56, 47, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(35, 56, 47, 0.1) 1px, transparent 1px),
+    linear-gradient(rgba(35, 56, 47, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(35, 56, 47, 0.045) 1px, transparent 1px);
+  background-size:
+    60px 60px,
+    60px 60px,
+    12px 12px,
+    12px 12px;
+}
+
+.silhouette {
+  width: min(42vw, 180px);
+  fill: none;
+  stroke: var(--color-musgo);
+  stroke-width: 0.8;
+  stroke-dasharray: 3 2;
+  opacity: 0.55;
+}
+
+.placeholderText {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-cinza-quente);
+}
+
+.linkButton {
+  font: inherit;
+  color: var(--color-musgo);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.disclaimer {
+  position: absolute;
+  left: 16px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-cinza-quente);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------- painel / sobreposição */
+.panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: max(12px, env(safe-area-inset-top)) 16px 10px;
+  display: grid;
+  gap: 8px;
+  pointer-events: none; /* o prédio continua tocável por trás */
+  background: linear-gradient(rgba(243, 239, 231, 0.96) 70%, rgba(243, 239, 231, 0));
+}
+
+.panel > * {
+  pointer-events: auto;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.live {
+  margin: 0;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-cinza-quente);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-areia);
+  border: 1px solid var(--color-musgo);
+}
+
+.live[data-state='live'] .dot {
+  background: var(--status-available);
+}
+
+.live[data-state='offline'] .dot {
+  background: var(--color-erro);
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 6px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  font-size: 12px;
+}
+
+.legend li {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--color-musgo);
+}
+
+.count {
+  font-family: var(--font-mono);
+  color: var(--color-cinza-quente);
+}
+
+.hint {
+  display: none;
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-cinza-quente);
+}
+
+/* ----------------------------------------------------- ficha (folha inferior) */
+.details {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  padding: 14px 16px max(16px, env(safe-area-inset-bottom));
+  background: var(--color-papel);
+  border-top: 1px solid var(--color-musgo);
+  box-shadow: 0 -8px 24px rgba(26, 36, 32, 0.08);
+  animation: sheet-in 180ms ease-out;
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+.detailsHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.eyebrow {
+  margin: 0 0 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-cinza-quente);
+}
+
+.unitTitle {
+  margin: 0;
+  font-size: 26px;
+}
+
+.close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--color-musgo);
+  background: transparent;
+  border: 1px solid var(--color-musgo);
+  cursor: pointer;
+}
+
+.facts {
+  margin: 12px 0 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+}
+
+.facts div {
+  border-top: 1px solid var(--color-areia);
+  padding-top: 6px;
+}
+
+.facts dt {
+  font-size: 11px;
+  color: var(--color-cinza-quente);
+}
+
+.facts dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+}
+
+.statusValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* --------------------------------------------------------------- desktop */
+@media (min-width: 900px) {
+  .stage {
+    right: 360px;
+  }
+
+  .panel {
+    left: auto;
+    width: 360px;
+    bottom: 0;
+    padding: 28px 24px;
+    align-content: start;
+    gap: 20px;
+    background: var(--color-papel);
+    border-left: 1px solid var(--color-musgo);
+    pointer-events: auto;
+    overflow-y: auto;
+  }
+
+  .head {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .title {
+    font-size: 32px;
+  }
+
+  .legend {
+    flex-direction: column;
+    gap: 8px;
+    font-size: 14px;
+  }
+
+  .legend .count {
+    margin-left: auto;
+  }
+
+  .hint {
+    display: block;
+  }
+
+  .details {
+    position: static;
+    padding: 16px 0 0;
+    border-top: 1px solid var(--color-musgo);
+    box-shadow: none;
+    animation: none;
+    background: transparent;
+  }
+}

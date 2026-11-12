@@ -6,7 +6,9 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./naming": "./src/naming.ts"
+    "./naming": "./src/naming.ts",
+    "./styles": "./src/styles.ts",
+    "./types": "./src/types.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

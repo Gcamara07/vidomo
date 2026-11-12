@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 0.0.0.0",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -14,7 +14,8 @@
     "@vidomo/viewer": "workspace:*",
     "next": "16.4.6",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

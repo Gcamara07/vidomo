@@ -3,7 +3,7 @@
  * Não importa Supabase nem conhece o banco: entrada = manifesto + mapa de status,
  * saída = eventos.
  */
-export { Viewer, PAPER_BACKGROUND, preloadModel, type ViewerProps } from './Viewer';
+export { Viewer, preloadModel, type ViewerProps } from './Viewer';
 export {
   UNIT_STATUSES,
   type CameraPreset,
@@ -14,6 +14,8 @@ export {
 } from './types';
 export {
   BRAND,
+  PAPER_BACKGROUND,
+  swatchBackground,
   SELECTED_APPEARANCE,
   STATUS_APPEARANCE,
   STATUS_LABELS,

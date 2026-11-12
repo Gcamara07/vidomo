@@ -23,7 +23,7 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { clampToBounds, computeFraming } from './camera';
 import { createViewerMaterials, type ViewerMaterials } from './materials';
 import { extractBuilding, type ScenePart } from './scene-model';
-import { BRAND, unitAppearance } from './styles';
+import { BRAND, PAPER_BACKGROUND, unitAppearance } from './styles';
 import type { UnitStatus, UnitStatusMap, Vec3, ViewerManifest } from './types';
 
 export interface ViewerProps {
@@ -45,18 +45,6 @@ export interface ViewerProps {
 /** Deslocamento máximo (px) entre apertar e soltar para contar como toque, não arrasto. */
 const TAP_TOLERANCE_PX = 8;
 
-/** Papel com grade milimetrada (linhas finas a cada 12 px e fortes a cada 60 px). */
-export const PAPER_BACKGROUND: CSSProperties = {
-  backgroundColor: BRAND.papel,
-  backgroundImage: [
-    'linear-gradient(rgba(35,56,47,0.10) 1px, transparent 1px)',
-    'linear-gradient(90deg, rgba(35,56,47,0.10) 1px, transparent 1px)',
-    'linear-gradient(rgba(35,56,47,0.045) 1px, transparent 1px)',
-    'linear-gradient(90deg, rgba(35,56,47,0.045) 1px, transparent 1px)',
-  ].join(','),
-  backgroundSize: '60px 60px, 60px 60px, 12px 12px, 12px 12px',
-};
-
 export function Viewer({
   manifest,
   unitStatus,
@@ -72,7 +60,8 @@ export function Viewer({
   return (
     <div
       className={className}
-      style={{ position: 'relative', overflow: 'hidden', ...PAPER_BACKGROUND, ...style }}
+      // Ocupa o contêiner; posição fica a cargo do app (className/style).
+      style={{ width: '100%', height: '100%', overflow: 'hidden', ...PAPER_BACKGROUND, ...style }}
       onPointerDown={(e) => {
         pointerDown.current = { x: e.clientX, y: e.clientY };
       }}

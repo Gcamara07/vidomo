@@ -2,6 +2,7 @@
  * Aparência das unidades por status (tabela do CLAUDE.md). Módulo puro, sem three.js,
  * para o app reutilizar na legenda e o viewer nos materiais.
  */
+import type { CSSProperties } from 'react';
 import type { UnitStatus } from './types';
 
 export const BRAND = {
@@ -56,4 +57,27 @@ export const SELECTED_APPEARANCE: UnitAppearance = {
 
 export function unitAppearance(status: UnitStatus, selected: boolean): UnitAppearance {
   return selected ? SELECTED_APPEARANCE : STATUS_APPEARANCE[status];
+}
+
+/** Papel com grade milimetrada (linhas finas a cada 12 px e fortes a cada 60 px). */
+export const PAPER_BACKGROUND: CSSProperties = {
+  backgroundColor: BRAND.papel,
+  backgroundImage: [
+    'linear-gradient(rgba(35,56,47,0.10) 1px, transparent 1px)',
+    'linear-gradient(90deg, rgba(35,56,47,0.10) 1px, transparent 1px)',
+    'linear-gradient(rgba(35,56,47,0.045) 1px, transparent 1px)',
+    'linear-gradient(90deg, rgba(35,56,47,0.045) 1px, transparent 1px)',
+  ].join(','),
+  backgroundSize: '60px 60px, 60px 60px, 12px 12px, 12px 12px',
+};
+
+/**
+ * Fundo CSS de uma amostra de legenda (mesma aparência do 3D).
+ * No CSS, 0deg aponta para cima: a hachura '/' (45° no 3D) é -45deg aqui.
+ */
+export function swatchBackground(status: UnitStatus): string {
+  const fill = STATUS_APPEARANCE[status].fill;
+  if (fill.kind === 'solid') return fill.color;
+  const angle = fill.angle === 45 ? -45 : 45;
+  return `repeating-linear-gradient(${angle}deg, ${fill.color} 0 2px, ${fill.background} 2px 6px)`;
 }

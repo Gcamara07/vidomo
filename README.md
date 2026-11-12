@@ -60,10 +60,25 @@ trocam cores sem recarregar o modelo. `?model=<url>` carrega outro GLB.
 No Windows, a porta precisa estar liberada no firewall. Num PowerShell **como administrador**:
 
 ```powershell
-New-NetFirewallRule -DisplayName "Vidomo dev (5174, 3000)" -Direction Inbound -Protocol TCP -LocalPort 5174,3000 -RemoteAddress LocalSubnet -Action Allow -Profile Private,Public
+New-NetFirewallRule -DisplayName "Vidomo dev (5174, 3000, 54321)" -Direction Inbound -Protocol TCP -LocalPort 5174,3000,54321 -RemoteAddress LocalSubnet -Action Allow -Profile Private,Public
 ```
 
-Para remover depois: `Remove-NetFirewallRule -DisplayName "Vidomo dev (5174, 3000)"`.
+Para remover depois: `Remove-NetFirewallRule -DisplayName "Vidomo dev (5174, 3000, 54321)"`.
+
+## Página pública da demo
+
+```bash
+pnpm dev   # Next em http://localhost:3000 e na rede local (porta 3000)
+```
+
+Abra `/e/residencial-vista`. O HTML já chega com nome, legenda com contagens e um
+placeholder; o three.js e o GLB baixam depois (Viewer com `next/dynamic`, sem SSR; GLB com
+preload). O status chega por Broadcast (`development:<slug>`) e a página relê tudo pela
+função pública ao conectar/reconectar, ao voltar do segundo plano e quando a rede volta.
+
+**No celular**, `127.0.0.1` é o próprio celular: em `apps/web/.env.local` use o IP da
+máquina em `NEXT_PUBLIC_SUPABASE_URL` (ex.: `http://192.168.0.10:54321`) e libere também a
+porta **54321** no firewall (já incluída na regra acima).
 
 ## Testes
 

@@ -8,11 +8,11 @@ import { StrictMode, useCallback, useEffect, useMemo, useState, type CSSProperti
 import { createRoot, type Root } from 'react-dom/client';
 import {
   BRAND,
-  STATUS_APPEARANCE,
   STATUS_LABELS,
   UNIT_STATUSES,
   Viewer,
   parseUnitKey,
+  swatchBackground,
   unitObjectKey,
   type UnitStatus,
   type UnitStatusMap,
@@ -42,17 +42,12 @@ function initialStatus(): UnitStatusMap {
 }
 
 function swatchStyle(status: UnitStatus): CSSProperties {
-  const fill = STATUS_APPEARANCE[status].fill;
-  const background =
-    fill.kind === 'solid'
-      ? fill.color
-      : `repeating-linear-gradient(${fill.angle === 45 ? -45 : 45}deg, ${fill.color} 0 2px, ${fill.background} 2px 6px)`;
   return {
     width: 16,
     height: 16,
     flex: 'none',
     border: `1px solid ${BRAND.musgo}`,
-    background,
+    background: swatchBackground(status),
   };
 }
 

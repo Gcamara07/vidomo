@@ -175,10 +175,22 @@ pnpm measure
 pnpm db:reset && pnpm model:upload   # volta ao modelo real
 ```
 
-## 7. Ambiente de demonstração (Supabase remoto)
+## 7. Ambiente de demonstração
 
-Projeto Supabase `vidomo` (ref. `msqdndtgpjoiipxwkwno`, região us-east-1). **Sem dados de
-produção**: só a Construtora Exemplo e o Residencial Vista.
+|                     | Onde                                                                    |
+| ------------------- | ----------------------------------------------------------------------- |
+| Demo pública        | https://vidomo.vercel.app/e/residencial-vista (a raiz `/` redireciona)  |
+| Painel de status    | https://vidomo.vercel.app/painel/dev-status                             |
+| Front (Vercel)      | projeto com root `apps/web`, funções em `iad1` (`apps/web/vercel.json`) |
+| Supabase            | projeto `vidomo`, ref. `msqdndtgpjoiipxwkwno`, região us-east-1         |
+| Referência da marca | `/dev/marca` (rota interna, `noindex`)                                  |
+
+**Sem dados de produção**: só a Construtora Exemplo e o Residencial Vista.
+
+> ⏸️ **O projeto gratuito do Supabase pausa após 7 dias sem uso.** Pausado, a demo abre
+> sem dados e sem 3D. Para reativar: painel do Supabase → projeto → **Restore project**
+> (leva alguns minutos; dados e arquivos são mantidos). Antes de uma apresentação, abra a
+> demo uma vez para garantir que está ativa.
 
 > ⚠️ **Nunca rode `supabase db reset --remote`**: ele aplicaria o `supabase/seed.sql` de
 > desenvolvimento (Construtora Teste e senha fraca `vidomo-dev-123`). No remoto usa-se só
@@ -209,7 +221,88 @@ produção**: só a Construtora Exemplo e o Residencial Vista.
   `curl -s https://<ref>.supabase.co/auth/v1/settings -H "apikey: <publishable>"` →
   `"disable_signup": true`.
 
-<!-- TODO(etapa 5): migrations, demo-seed, modelos, deploy na Vercel, projeto gratuito pausa após 7 dias. -->
+### Pré-requisito: CLI ligado ao projeto
+
+No seu terminal (a senha do banco vai direto no prompt do CLI, nunca em arquivo):
+
+```bash
+pnpm exec supabase login
+pnpm exec supabase link --project-ref msqdndtgpjoiipxwkwno
+```
+
+Os comandos de escrita no remoto pedem confirmação (`--yes`). Para scripts que precisam da
+URL e das chaves, carregue-as só na sessão do terminal (Git Bash):
+
+```bash
+export NEXT_PUBLIC_SUPABASE_URL=https://msqdndtgpjoiipxwkwno.supabase.co
+pnpm exec supabase projects api-keys --project-ref msqdndtgpjoiipxwkwno --reveal
+export NEXT_PUBLIC_SUPABASE_ANON_KEY=<sb_publishable_…>
+export SUPABASE_SERVICE_ROLE_KEY=<sb_secret_…>     # só no terminal; nunca na Vercel
+```
+
+### Reaplicar migrations
+
+```bash
+pnpm exec supabase db push --remote --dry-run   # lista o que falta; "seeds" deve vir vazio
+pnpm exec supabase db push --remote             # aplica (pede confirmação)
+```
+
+Conferir que o remoto tem as mesmas proteções do local (RLS, políticas, funções,
+trigger de Broadcast, tópico privado, bucket, privilégios) — as duas saídas devem ser iguais:
+
+```bash
+pnpm exec supabase db query --read-only -f supabase/checks/security-catalog.sql
+pnpm exec supabase db query --remote --read-only -f supabase/checks/security-catalog.sql
+```
+
+### Dados da demo e admin
+
+```bash
+pnpm exec supabase db query --remote -f supabase/demo-seed.sql   # idempotente
+pnpm demo:admin --email voce@exemplo.com                          # senha mostrada uma vez
+```
+
+### Modelos 3D
+
+```bash
+pnpm model:compress modelos/residencial-vista-leve.glb
+pnpm model:compress modelos/residencial-vista-detalhes.glb
+pnpm model:upload                                                   # camada leve
+pnpm model:upload scripts/out/residencial-vista-detalhes.glb --layer detail
+```
+
+O upload valida o GLB contra as unidades do remoto antes de enviar.
+
+### Testes contra o remoto
+
+```bash
+pnpm test:remote
+```
+
+Leitura anônima pela função pública, anônimo sem acesso às tabelas, GLBs públicos, cliente
+sem publicar no tópico e Broadcast chegando em até 3 s. O teste de Broadcast troca o status
+da unidade 1004 e o restaura (deixa 2 linhas no histórico, que é imutável); sem
+`SUPABASE_SERVICE_ROLE_KEY` ele é pulado. Os testes que criam e apagam dados ficam só no
+local (`pnpm test:db`).
+
+### Deploy na Vercel
+
+- Projeto ligado ao repositório `Gcamara07/vidomo`, **Root Directory `apps/web`**,
+  framework Next.js, install/build padrão (pnpm pelo `pnpm-lock.yaml`), com "Include files
+  outside the root directory" ligado (precisa do `packages/viewer`).
+- Variáveis (Production e Preview): `NEXT_PUBLIC_SUPABASE_URL` e
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY` (chave **publishable**). **A secret não vai para a Vercel.**
+- Região das funções: `iad1`, perto do banco em us-east-1 (`apps/web/vercel.json`).
+- Deploy: cada push no `main` gera um deploy de produção.
+- Supabase → Authentication → URL Configuration: Site URL `https://vidomo.vercel.app` e o
+  mesmo domínio nas Redirect URLs. Ajuste pelo painel: `supabase config push` enviaria o
+  `config.toml` local inteiro (e religaria o cadastro público).
+
+### Medir a demo publicada
+
+```bash
+pnpm measure --network fast4g --url https://vidomo.vercel.app/e/residencial-vista
+```
 
 ## 8. Como funciona (resumo)
 

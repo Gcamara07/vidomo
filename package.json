@@ -24,7 +24,9 @@
     "model:validate": "tsx scripts/validate-model.ts",
     "model:upload": "tsx scripts/upload-model.ts",
     "measure": "tsx scripts/measure-demo.ts",
-    "model:compress": "tsx scripts/compress-model.ts"
+    "model:compress": "tsx scripts/compress-model.ts",
+    "demo:admin": "tsx scripts/demo-admin.ts",
+    "test:remote": "vitest run --config supabase/vitest.remote.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

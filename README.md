@@ -175,7 +175,43 @@ pnpm measure
 pnpm db:reset && pnpm model:upload   # volta ao modelo real
 ```
 
-## 7. Como funciona (resumo)
+## 7. Ambiente de demonstração (Supabase remoto)
+
+Projeto Supabase `vidomo` (ref. `msqdndtgpjoiipxwkwno`, região us-east-1). **Sem dados de
+produção**: só a Construtora Exemplo e o Residencial Vista.
+
+> ⚠️ **Nunca rode `supabase db reset --remote`**: ele aplicaria o `supabase/seed.sql` de
+> desenvolvimento (Construtora Teste e senha fraca `vidomo-dev-123`). No remoto usa-se só
+> `supabase/demo-seed.sql`.
+
+### Auth e usuários
+
+- **Cadastro público desligado** (Authentication → Sign In / Providers → "Allow new users to
+  sign up" = off). Ninguém cria conta pela API pública; o login por e-mail e senha de
+  usuários existentes continua funcionando (o bloqueio vale só para cadastro novo).
+- Usuários da demo são criados **só** pelo `pnpm demo:admin`, que usa a API de admin do
+  Auth (não afetada pelo bloqueio de cadastro), cria o usuário com e-mail já confirmado,
+  gera uma senha forte de 24 caracteres, mostra-a **uma vez** no terminal (não grava em
+  arquivo) e vincula o usuário como admin da Construtora Exemplo.
+
+  ```bash
+  pnpm demo:admin --email voce@exemplo.com            # cria
+  pnpm demo:admin --email voce@exemplo.com --reset    # gera nova senha
+  ```
+
+  Precisa de `NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` (chave **secret** do
+  projeto: `pnpm exec supabase projects api-keys --project-ref <ref> --reveal`) só no
+  terminal. A secret nunca vai para a Vercel nem para arquivo versionado.
+
+- **Proteção contra senhas vazadas** (HaveIBeenPwned) é do plano Pro: desligada por enquanto.
+  As senhas da demo são geradas aleatoriamente, o que cobre o risco nesta fase.
+- Conferir a configuração (público, sem segredo):
+  `curl -s https://<ref>.supabase.co/auth/v1/settings -H "apikey: <publishable>"` →
+  `"disable_signup": true`.
+
+<!-- TODO(etapa 5): migrations, demo-seed, modelos, deploy na Vercel, projeto gratuito pausa após 7 dias. -->
+
+## 8. Como funciona (resumo)
 
 - **Banco** (`supabase/migrations`): toda tabela de cliente tem `organization_id` e RLS;
   FKs compostas impedem apontar para outra organização. `anon` não tem acesso direto a

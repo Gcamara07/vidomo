@@ -3,5 +3,11 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["vitest.config.ts", "eslint.config.mjs", "supabase/tests/**/*.ts"]
+  "include": [
+    "vitest.config.ts",
+    "eslint.config.mjs",
+    "supabase/tests/**/*.ts",
+    "supabase/remote-tests/**/*.ts",
+    "supabase/vitest.remote.config.ts"
+  ]
 }

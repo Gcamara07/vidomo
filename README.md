@@ -23,8 +23,10 @@ scripts/          gerar/validar/enviar o GLB de teste, medir a demo
 pnpm install
 pnpm db:start        # sobe o Supabase local (na 1ª vez baixa as imagens)
 pnpm db:reset        # aplica migrations + seed
-pnpm model:compress modelos/residencial-vista-leve.glb   # Meshopt → scripts/out/
-pnpm model:upload    # valida e envia scripts/out/residencial-vista-leve.glb ao bucket models
+pnpm model:compress modelos/residencial-vista-leve.glb       # Meshopt → scripts/out/
+pnpm model:compress modelos/residencial-vista-detalhes.glb
+pnpm model:upload    # camada leve → developments.model_path
+pnpm model:upload scripts/out/residencial-vista-detalhes.glb --layer detail
 ```
 
 Crie `apps/web/.env.local` a partir do [.env.example](.env.example) com os valores de
@@ -34,8 +36,8 @@ Crie `apps/web/.env.local` a partir do [.env.example](.env.example) com os valor
 pnpm dev             # http://localhost:3000/e/residencial-vista
 ```
 
-`pnpm db:reset` apaga os objetos do Storage: depois de um reset, rode `pnpm model:upload`
-de novo. O Studio fica em http://127.0.0.1:54323.
+`pnpm db:reset` apaga os objetos do Storage: depois de um reset, rode os dois
+`pnpm model:upload` de novo. O Studio fica em http://127.0.0.1:54323.
 
 ### Usuários de desenvolvimento (somente local)
 
@@ -53,8 +55,17 @@ de novo. O Studio fica em http://127.0.0.1:54323.
 
 ### Modelo real (Blender)
 
-- `modelos/residencial-vista-leve.glb` — exportado do Blender, vai para o git. Os `.blend`
-  ficam fora do git (`modelos/*.blend`).
+- `modelos/residencial-vista-leve.glb` (camada 1) e `modelos/residencial-vista-detalhes.glb`
+  (camada 2: esquadrias, varandas, guarda-corpos, hall, platibanda, terreno, rua, pisos,
+  portaria, árvores, jardins e as áreas comuns `AMENITY__PISCINA`, `AMENITY__GOURMET`,
+  `AMENITY__ACADEMIA`) — exportados do Blender, vão para o git. Os `.blend` ficam fora
+  (`modelos/*.blend`).
+- Os detalhes usam as cores do próprio GLB, chapadas (sem luz), com o contorno técnico. A
+  cor precisa estar no **Base Color do Principled BSDF**: a cor de "Viewport Display"
+  (modo Solid) não é exportada. Digite a cor no campo **Hex** do seletor (que é sRGB); os
+  campos R/G/B são lineares, e valores sRGB digitados neles saem mais claros no GLB.
+- `AMENITY__` é aceito na camada de detalhes e, por enquanto, só visual (o validador lista
+  as áreas comuns encontradas). TODO: toque para abrir o panorama 360°.
 - `pnpm model:compress <arquivo.glb>` aplica o pipeline (dedup, quantização, Meshopt) e
   grava em `scripts/out/` (reproduzível, fora do git).
 - `pnpm model:validate` e `pnpm model:upload` usam `scripts/out/residencial-vista-leve.glb`

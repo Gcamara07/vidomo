@@ -26,3 +26,5 @@ dist-example/
 # Arquivos-fonte do Blender (o .glb exportado vai para o git)
 modelos/*.blend
 modelos/*.blend1
+# Renders de conferência exportados do Blender
+modelos/preview-*.png

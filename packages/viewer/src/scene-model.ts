@@ -3,7 +3,7 @@
  * nomes. O viewer renderiza essas partes declarativamente (com materiais próprios),
  * então as cores/texturas que vieram no GLB são ignoradas.
  */
-import type { Matrix4 } from 'three';
+import type { Material, Matrix4 } from 'three';
 import {
   Box3,
   BufferAttribute,
@@ -29,6 +29,9 @@ export interface ScenePart {
   geometry: BufferGeometry;
   /** Transformação mundial do objeto na cena original. */
   matrix: Matrix4;
+  /** Material original do GLB (cor exportada). Unidades e estrutura o ignoram; a camada de
+   *  detalhes usa a cor dele em versão chapada. */
+  sourceMaterial: Material | null;
 }
 
 export interface BuildingModel {
@@ -139,6 +142,7 @@ export function extractBuilding(
       objectKey: parsed?.valid ? parsed.objectKey : null,
       geometry,
       matrix,
+      sourceMaterial: (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) ?? null,
     };
 
     if (isUnit) model.units.push(part);

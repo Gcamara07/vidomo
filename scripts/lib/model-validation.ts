@@ -34,6 +34,9 @@ export interface ModelReport {
   duplicateKeys: string[];
   /** Objetos sem prefixo de tipo (aviso; o viewer os trata como visuais). */
   unprefixedNames: string[];
+  /** Áreas comuns (AMENITY__) encontradas. Por enquanto só visuais; o toque para abrir
+   *  panoramas vem depois. */
+  amenities: string[];
   counts: { unitObjects: number; floorObjects: number; dbUnits: number; dbFloors: number };
   fileBytes: number;
   /** Erro: acima de 10 MB. */
@@ -55,6 +58,7 @@ export function compareModel(
   layer: ModelLayer = 'base',
 ): ModelReport {
   const unitObjs = new Map<string, number>();
+  const amenities: string[] = [];
   const floorObjs = new Map<string, number>();
   const invalidNames: string[] = [];
   const unprefixedNames: string[] = [];
@@ -69,6 +73,7 @@ export function compareModel(
       invalidNames.push(name);
       continue;
     }
+    if (parsed.kind === 'amenity') amenities.push(parsed.objectKey);
     const bucket = parsed.kind === 'unit' ? unitObjs : parsed.kind === 'floor' ? floorObjs : null;
     bucket?.set(parsed.objectKey, (bucket.get(parsed.objectKey) ?? 0) + 1);
   }
@@ -105,6 +110,7 @@ export function compareModel(
     invalidNames: sorted(invalidNames),
     duplicateKeys: sorted(duplicateKeys),
     unprefixedNames: sorted(unprefixedNames),
+    amenities: sorted(amenities),
     counts: {
       unitObjects: unitObjs.size,
       floorObjects: floorObjs.size,

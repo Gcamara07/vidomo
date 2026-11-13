@@ -7,6 +7,7 @@
  */
 import {
   CanvasTexture,
+  Color,
   MeshBasicMaterial,
   RepeatWrapping,
   SRGBColorSpace,
@@ -96,4 +97,29 @@ export function createViewerMaterials(anisotropy = 4): ViewerMaterials {
       }
     },
   };
+}
+
+/**
+ * Versão chapada (sem luz) de um material do GLB: mantém cor, textura, cores por vértice,
+ * transparência e lados, como o resto do viewer (cor idêntica à exportada, sem sombreamento).
+ */
+export function toFlatMaterial(src: Material): MeshBasicMaterial {
+  const s = src as Material & {
+    color?: Color;
+    map?: Texture | null;
+  };
+  const mat = new MeshBasicMaterial({
+    color: s.color ? s.color.clone() : new Color('#FFFFFF'),
+    map: s.map ?? null,
+    vertexColors: src.vertexColors,
+    transparent: src.transparent,
+    opacity: src.opacity,
+    alphaTest: src.alphaTest,
+    side: src.side,
+  });
+  mat.name = src.name;
+  mat.polygonOffset = true;
+  mat.polygonOffsetFactor = 1;
+  mat.polygonOffsetUnits = 1;
+  return mat;
 }

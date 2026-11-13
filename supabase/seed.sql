@@ -85,19 +85,22 @@ begin
     from (values
       ('a0000000-0000-4000-8000-0000000000a0'::uuid, 'residencial-vista', 'Residencial Vista',
        'published'::public.development_status, 'from'::public.price_display,
-       'residencial-vista/residencial-vista-leve.glb', 'TA', 'Torre A', 10, 4),
+       'residencial-vista/residencial-vista-leve.glb',
+       'residencial-vista/residencial-vista-detalhes.glb', 'TA', 'Torre A', 10, 4),
       ('b0000000-0000-4000-8000-0000000000b0'::uuid, 'residencial-teste', 'Residencial Teste',
        'draft'::public.development_status, 'hidden'::public.price_display,
-       null, 'TB', 'Torre B', 2, 2)
-    ) as t(org, slug, name, status, price_display, model_path, tower_code, tower_name, floors, per_floor)
+       null, null, 'TB', 'Torre B', 2, 2)
+    ) as t(org, slug, name, status, price_display, model_path, detail_model_path,
+          tower_code, tower_name, floors, per_floor)
   loop
     v_org := d.org;
     v_tower_code := d.tower_code;
     v_floors := d.floors;
     v_per_floor := d.per_floor;
 
-    insert into public.developments (organization_id, slug, name, status, price_display, model_path)
-    values (v_org, d.slug, d.name, d.status, d.price_display, d.model_path)
+    insert into public.developments
+      (organization_id, slug, name, status, price_display, model_path, detail_model_path)
+    values (v_org, d.slug, d.name, d.status, d.price_display, d.model_path, d.detail_model_path)
     returning id into v_dev;
 
     insert into public.towers (organization_id, development_id, code, name)

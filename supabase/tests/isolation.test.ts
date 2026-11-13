@@ -289,7 +289,7 @@ describe('comprador anônimo', () => {
         slug: SLUG_A,
         name: 'Residencial Vista',
         model_path: 'residencial-vista/residencial-vista-leve.glb',
-        detail_model_path: null,
+        detail_model_path: 'residencial-vista/residencial-vista-detalhes.glb',
       },
     ]);
   });

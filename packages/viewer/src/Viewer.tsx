@@ -22,7 +22,7 @@ import {
 import type { Material, PerspectiveCamera } from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { clampToBounds, computeFraming } from './camera';
-import { createViewerMaterials, type ViewerMaterials } from './materials';
+import { createViewerMaterials, toFlatMaterial, type ViewerMaterials } from './materials';
 import { extractBuilding, type ScenePart } from './scene-model';
 import { BRAND, PAPER_BACKGROUND, unitAppearance } from './styles';
 import type { UnitStatus, UnitStatusMap, Vec3, ViewerManifest } from './types';
@@ -229,9 +229,11 @@ function Building({
 }
 
 /**
- * Camada 2: modelo de detalhes (fachada, varandas, entorno). Só visual: não seleciona e
- * não bloqueia o toque nas unidades atrás dele. Unidades neste arquivo são ignoradas — a
- * seleção vem sempre do modelo leve.
+ * Camada 2: modelo de detalhes (fachada, varandas, entorno, áreas comuns). Só visual: não
+ * seleciona e não bloqueia o toque nas unidades atrás dele. Unidades neste arquivo são
+ * ignoradas — a seleção vem sempre do modelo leve.
+ * Cores: as do próprio GLB, em material chapado (sem luz), com o mesmo contorno técnico.
+ * TODO(panoramas): toque em AMENITY__ para abrir o panorama 360° — fora desta fatia.
  */
 function DetailLayer({
   url,
@@ -266,13 +268,31 @@ function DetailLayer({
     return () => cancelAnimationFrame(id);
   }, [model]);
 
+  // Um material chapado por material do GLB (compartilhado entre objetos que o usam).
+  const flat = useMemo(() => {
+    const byUuid = new Map<string, Material>();
+    for (const part of [...model.structure, ...model.floors]) {
+      const src = part.sourceMaterial;
+      if (src && !byUuid.has(src.uuid)) byUuid.set(src.uuid, toFlatMaterial(src));
+    }
+    return byUuid;
+  }, [model]);
+  useEffect(
+    () => () => {
+      for (const m of flat.values()) m.dispose();
+    },
+    [flat],
+  );
+  const materialFor = (part: ScenePart) =>
+    (part.sourceMaterial && flat.get(part.sourceMaterial.uuid)) || materials.structure;
+
   return (
     <>
       {model.structure.map((part, i) => (
-        <DetailPart key={`d${i}`} part={part} material={materials.structure} />
+        <DetailPart key={`d${i}`} part={part} material={materialFor(part)} />
       ))}
       {model.floors.map((part, i) => (
-        <DetailPart key={`df${i}`} part={part} material={materials.slab} />
+        <DetailPart key={`df${i}`} part={part} material={materialFor(part)} />
       ))}
     </>
   );

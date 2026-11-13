@@ -73,6 +73,10 @@ async function main() {
     list('Andares sem objeto', report.floorsWithoutObject, false);
     list('Objetos de andar sem cadastro', report.objectsWithoutFloor, false);
     list('Objetos sem prefixo', report.unprefixedNames, false);
+    if (report.amenities.length)
+      console.log(
+        `  [info] Áreas comuns (só visuais por enquanto): ${report.amenities.join(', ')}`,
+      );
     const sizeMark = report.overSizeLimit ? 'ERRO' : report.overBaseBudget ? 'aviso' : 'ok';
     const budget =
       layer === 'base'

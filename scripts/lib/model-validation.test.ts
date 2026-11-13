@@ -78,6 +78,18 @@ describe('compareModel', () => {
     expect(withUnits.warnings[0]).toMatch(/1 objetos UNIT__/);
   });
 
+  it('aceita áreas comuns (AMENITY__) na camada de detalhes e as lista', () => {
+    const r = compareModel(
+      ['VIS__TERRENO', 'AMENITY__PISCINA', 'AMENITY__GOURMET', 'AMENITY__ACADEMIA'],
+      db,
+      1000,
+      'detail',
+    );
+    expect(r.ok).toBe(true);
+    expect(r.warnings).toEqual([]);
+    expect(r.amenities).toEqual(['ACADEMIA', 'GOURMET', 'PISCINA']);
+  });
+
   it('reprova arquivo acima de 10 MB', () => {
     const names = db.unitKeys.map((k) => `UNIT__${k}`);
     expect(compareModel(names, db, MAX_MODEL_BYTES).ok).toBe(true);

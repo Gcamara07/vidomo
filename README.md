@@ -23,8 +23,8 @@ scripts/          gerar/validar/enviar o GLB de teste, medir a demo
 pnpm install
 pnpm db:start        # sobe o Supabase local (na 1ª vez baixa as imagens)
 pnpm db:reset        # aplica migrations + seed
-pnpm model:generate  # gera o prédio de teste (scripts/out/residencial-vista-test.glb)
-pnpm model:upload    # valida e envia o GLB ao bucket models
+pnpm model:compress modelos/residencial-vista-leve.glb   # Meshopt → scripts/out/
+pnpm model:upload    # valida e envia scripts/out/residencial-vista-leve.glb ao bucket models
 ```
 
 Crie `apps/web/.env.local` a partir do [.env.example](.env.example) com os valores de
@@ -45,10 +45,22 @@ de novo. O Studio fica em http://127.0.0.1:54323.
 | Construtora Teste   | `admin@teste.test`   | `vidomo-dev-123` | admin |
 
 - **Residencial Vista** (`residencial-vista`, publicado) — Construtora Exemplo, torre TA,
-  10 andares × 4 unidades (101–104 … 1001–1004), plantas Tipo A/B alternadas, os 5 status.
+  10 andares × 4 unidades (101–104 … 1001–1004), os 5 status. Finais 1 e 3: Tipo A
+  (2 dorms, 58 m²); finais 2 e 4: Tipo B (3 dorms, 75 m²) — iguais ao modelo do Blender.
 - **Residencial Teste** (`residencial-teste`, rascunho) — Construtora Teste, 4 unidades.
 
-## 3. Prédio de teste (GLB) e as duas camadas
+## 3. Modelos 3D (GLB) e as duas camadas
+
+### Modelo real (Blender)
+
+- `modelos/residencial-vista-leve.glb` — exportado do Blender, vai para o git. Os `.blend`
+  ficam fora do git (`modelos/*.blend`).
+- `pnpm model:compress <arquivo.glb>` aplica o pipeline (dedup, quantização, Meshopt) e
+  grava em `scripts/out/` (reproduzível, fora do git).
+- `pnpm model:validate` e `pnpm model:upload` usam `scripts/out/residencial-vista-leve.glb`
+  por padrão; o upload vai para `developments.model_path`.
+
+### Prédio de teste (caixas) e simulações
 
 O viewer carrega o prédio em duas camadas:
 
@@ -58,9 +70,9 @@ O viewer carrega o prédio em duas camadas:
 | 2 — detalhes (opcional) | `developments.detail_model_path` | fachada, varandas, entorno (`VIS__`) | carregada depois, sem bloquear; se falhar, o prédio segue só com a camada 1 |
 
 ```bash
-pnpm model:generate   # camada leve: torre, 10 lajes, 40 unidades; Meshopt + quantização
-pnpm model:validate   # objetos do GLB × unidades/andares do banco, nomes, duplicados, peso
-pnpm model:upload     # valida e envia ao bucket models (caminho = developments.model_path)
+pnpm model:generate   # caixas: torre, 10 lajes, 40 unidades → scripts/out/residencial-vista-test.glb
+pnpm model:validate scripts/out/residencial-vista-test.glb
+pnpm model:upload scripts/out/residencial-vista-test.glb   # troca o modelo real pelas caixas
 ```
 
 - `pnpm model:validate caminho.glb --slug outro` valida outro arquivo; sai com código 1 se
@@ -149,7 +161,7 @@ docker exec supabase_db_vidomo psql -U postgres -c "update developments set deta
 pnpm model:upload scripts/out/residencial-vista-1.5mb.glb
 pnpm model:upload scripts/out/residencial-vista-test-detalhes.glb --layer detail
 pnpm measure
-pnpm db:reset && pnpm model:upload   # volta ao prédio leve
+pnpm db:reset && pnpm model:upload   # volta ao modelo real
 ```
 
 ## 7. Como funciona (resumo)

@@ -85,7 +85,7 @@ begin
     from (values
       ('a0000000-0000-4000-8000-0000000000a0'::uuid, 'residencial-vista', 'Residencial Vista',
        'published'::public.development_status, 'from'::public.price_display,
-       'residencial-vista/residencial-vista-test.glb', 'TA', 'Torre A', 10, 4),
+       'residencial-vista/residencial-vista-leve.glb', 'TA', 'Torre A', 10, 4),
       ('b0000000-0000-4000-8000-0000000000b0'::uuid, 'residencial-teste', 'Residencial Teste',
        'draft'::public.development_status, 'hidden'::public.price_display,
        null, 'TB', 'Torre B', 2, 2)
@@ -105,11 +105,11 @@ begin
     returning id into v_tower;
 
     insert into public.unit_types (organization_id, development_id, name, area_m2, bedrooms)
-    values (v_org, v_dev, 'Tipo A', 58.40, 2)
+    values (v_org, v_dev, 'Tipo A', 58.00, 2)
     returning id into v_type_a;
 
     insert into public.unit_types (organization_id, development_id, name, area_m2, bedrooms)
-    values (v_org, v_dev, 'Tipo B', 74.10, 3)
+    values (v_org, v_dev, 'Tipo B', 75.00, 3)
     returning id into v_type_b;
 
     for f in 1..v_floors loop

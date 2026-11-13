@@ -22,3 +22,7 @@ scripts/out/
 .DS_Store
 Thumbs.db
 dist-example/
+
+# Arquivos-fonte do Blender (o .glb exportado vai para o git)
+modelos/*.blend
+modelos/*.blend1

@@ -35,7 +35,7 @@ if (layer !== 'base' && layer !== 'detail') {
   process.exit(1);
 }
 
-const file = resolve(positionals[0] ?? 'scripts/out/residencial-vista-test.glb');
+const file = resolve(positionals[0] ?? 'scripts/out/residencial-vista-leve.glb');
 
 async function main() {
   const io = await createIO();

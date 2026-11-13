@@ -27,7 +27,7 @@ const { values, positionals } = parseArgs({
   },
 });
 
-const file = resolve(positionals[0] ?? 'scripts/out/residencial-vista-test.glb');
+const file = resolve(positionals[0] ?? 'scripts/out/residencial-vista-leve.glb');
 
 async function main() {
   const client = serviceClient();

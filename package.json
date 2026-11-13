@@ -23,7 +23,8 @@
     "model:generate": "tsx scripts/generate-test-building.ts",
     "model:validate": "tsx scripts/validate-model.ts",
     "model:upload": "tsx scripts/upload-model.ts",
-    "measure": "tsx scripts/measure-demo.ts"
+    "measure": "tsx scripts/measure-demo.ts",
+    "model:compress": "tsx scripts/compress-model.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

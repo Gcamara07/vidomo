@@ -30,7 +30,7 @@ select item from (
   select 'publication | supabase_realtime | ' || schemaname || '.' || tablename
   from pg_publication_tables where pubname = 'supabase_realtime'
   union all
-  -- Bucket de modelos
+  -- Buckets
   select 'bucket | ' || id || ' | public=' || public from storage.buckets
   union all
   -- anon não acessa tabela nenhuma
@@ -38,6 +38,20 @@ select item from (
          || coalesce(string_agg(table_name || ':' || privilege_type, ',' order by table_name, privilege_type), 'nenhum')
   from information_schema.role_table_grants
   where grantee = 'anon' and table_schema = 'public'
+  union all
+  -- Schema private: nenhuma tabela acessível por anon/authenticated (leads: chaves, antispam)
+  select 'private-table-privileges | anon,authenticated | '
+         || coalesce(string_agg(grantee || ':' || table_name || ':' || privilege_type, ','
+                                order by grantee, table_name, privilege_type), 'nenhum')
+  from information_schema.role_table_grants
+  where grantee in ('anon', 'authenticated') and table_schema = 'private'
+  union all
+  -- Leads: colunas que o admin pode editar direto (o segredo fica no Vault)
+  select 'column-privilege | organization_settings | authenticated update='
+         || coalesce(string_agg(column_name, ',' order by column_name), 'nenhuma')
+  from information_schema.column_privileges
+  where grantee = 'authenticated' and table_schema = 'public'
+    and table_name = 'organization_settings' and privilege_type = 'UPDATE'
   union all
   -- units.status sem UPDATE para authenticated (regra 2)
   select 'column-privilege | units.status | authenticated update='

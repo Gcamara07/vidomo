@@ -41,10 +41,14 @@ pnpm dev             # http://localhost:3000/e/residencial-vista
 
 ### Usuários de desenvolvimento (somente local)
 
-| Organização         | E-mail               | Senha            | Papel |
-| ------------------- | -------------------- | ---------------- | ----- |
-| Construtora Exemplo | `admin@exemplo.test` | `vidomo-dev-123` | admin |
-| Construtora Teste   | `admin@teste.test`   | `vidomo-dev-123` | admin |
+| Organização         | E-mail                | Senha            | Papel              |
+| ------------------- | --------------------- | ---------------- | ------------------ |
+| Construtora Exemplo | `admin@exemplo.test`  | `vidomo-dev-123` | admin              |
+| Construtora Exemplo | `vendas@exemplo.test` | `vidomo-dev-123` | vendedor (`sales`) |
+| Construtora Teste   | `admin@teste.test`    | `vidomo-dev-123` | admin              |
+
+Chave de ingestão de leads só do ambiente local (`LEADS_INGEST_KEY`):
+`vidomo-dev-ingest-key-somente-local-0001` (o banco guarda só o hash).
 
 - **Residencial Vista** (`residencial-vista`, publicado) — Construtora Exemplo, torre TA,
   10 andares × 4 unidades (101–104 … 1001–1004), os 5 status. Finais 1 e 3: Tipo A

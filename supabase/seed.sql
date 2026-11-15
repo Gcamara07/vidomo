@@ -1,8 +1,12 @@
 -- Vidomo — dados de desenvolvimento (aplicados por `supabase db reset`).
 -- Credenciais SOMENTE para o ambiente local; documentadas no README.
 --
---   Construtora Exemplo (org A): admin@exemplo.test / vidomo-dev-123
---   Construtora Teste   (org B): admin@teste.test   / vidomo-dev-123
+--   Construtora Exemplo (org A): admin@exemplo.test  / vidomo-dev-123 (admin)
+--                                vendas@exemplo.test / vidomo-dev-123 (vendedor)
+--   Construtora Teste   (org B): admin@teste.test    / vidomo-dev-123 (admin)
+--
+-- Chave de ingestão de leads (LEADS_INGEST_KEY) SÓ do ambiente local:
+--   vidomo-dev-ingest-key-somente-local-0001
 
 -- ---------------------------------------------------------------------------
 -- Usuários do Auth
@@ -15,6 +19,7 @@ begin
     select *
     from (values
       ('a0000000-0000-4000-8000-000000000001'::uuid, 'admin@exemplo.test', 'Admin Exemplo'),
+      ('a0000000-0000-4000-8000-000000000002'::uuid, 'vendas@exemplo.test', 'Vendedor Exemplo'),
       ('b0000000-0000-4000-8000-000000000001'::uuid, 'admin@teste.test', 'Admin Teste')
     ) as t(id, email, full_name)
   loop
@@ -50,6 +55,7 @@ insert into public.organizations (id, name, slug) values
 
 insert into public.organization_members (organization_id, user_id, role) values
   ('a0000000-0000-4000-8000-0000000000a0', 'a0000000-0000-4000-8000-000000000001', 'admin'),
+  ('a0000000-0000-4000-8000-0000000000a0', 'a0000000-0000-4000-8000-000000000002', 'sales'),
   ('b0000000-0000-4000-8000-0000000000b0', 'b0000000-0000-4000-8000-000000000001', 'admin');
 
 -- ---------------------------------------------------------------------------
@@ -144,3 +150,16 @@ begin
   end loop;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Leads (Bloco 2): configuração comercial e chave de ingestão de desenvolvimento
+-- ---------------------------------------------------------------------------
+insert into public.organization_settings (organization_id, whatsapp_number, notification_emails) values
+  ('a0000000-0000-4000-8000-0000000000a0', '5516997694880', array['comercial@exemplo.test']),
+  ('b0000000-0000-4000-8000-0000000000b0', null, array['comercial@teste.test']);
+
+-- Só o hash vai para o banco; a chave vai em apps/web/.env.local (LEADS_INGEST_KEY).
+insert into private.ingest_keys (key_hash, label) values (
+  encode(extensions.digest('vidomo-dev-ingest-key-somente-local-0001', 'sha256'), 'hex'),
+  'desenvolvimento local'
+);

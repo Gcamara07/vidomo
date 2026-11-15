@@ -435,3 +435,135 @@ describe('Realtime postgres_changes de units (painel)', () => {
     expect(b.changes).toEqual([]);
   });
 });
+
+describe('leads: admin da org B contra a org A', () => {
+  const INGEST_KEY = 'vidomo-dev-ingest-key-somente-local-0001'; // só local (seed.sql)
+  let leadA: string;
+  let leadB: string;
+
+  beforeAll(async () => {
+    const { data, error } = await anon.rpc('create_lead', {
+      p_ingest_key: INGEST_KEY,
+      p_client_key: `isolamento-${Date.now()}-${Math.random()}`.slice(0, 64),
+      p_slug: SLUG_A,
+      p_object_key: unitA.object_key,
+      p_name: 'Comprador Isolamento',
+      p_phone: `1699${String(Date.now()).slice(-7)}`,
+      p_email: null,
+      p_message: null,
+      p_source: 'unit_link',
+      p_consent: true,
+      p_consent_version: 'online-v1',
+    });
+    if (error) throw error;
+    leadA = (data as { lead_id: string }[])[0]!.lead_id;
+    await service.rpc('register_whatsapp_click', {
+      p_slug: SLUG_A,
+      p_object_key: unitA.object_key,
+    });
+
+    // A org B também tem um lead (manual, empreendimento em rascunho).
+    const b = await adminB.rpc('create_manual_lead', {
+      p_development_id: devB.id,
+      p_unit_id: null,
+      p_name: 'Comprador B',
+      p_phone: '11987654321',
+      p_email: null,
+      p_message: null,
+      p_consent_in_person: true,
+    });
+    if (b.error) throw b.error;
+    leadB = (b.data as { id: string }).id;
+  });
+
+  afterAll(async () => {
+    await service.from('leads').delete().in('id', [leadA, leadB]);
+  });
+
+  async function leadOf(id: string) {
+    const { data } = await service
+      .from('leads')
+      .select('status, assigned_to')
+      .eq('id', id)
+      .maybeSingle();
+    return data;
+  }
+
+  it.each([
+    'leads',
+    'notification_deliveries',
+    'organization_settings',
+    'lead_deletions',
+    'unit_whatsapp_clicks',
+  ])('não enxerga nenhuma linha da org A em %s', async (table) => {
+    const { data, error } = await adminB.from(table).select('organization_id');
+    expect(error).toBeNull();
+    const orgIds = (data as { organization_id: string }[]).map((r) => r.organization_id);
+    expect(orgIds).not.toContain(devA.organization_id);
+    expect(orgIds.every((o) => o === devB.organization_id)).toBe(true);
+  });
+
+  it('enxerga o próprio lead e não o da org A, nem buscando pelo id', async () => {
+    const own = await adminB.from('leads').select('id');
+    expect(own.data!.map((l) => l.id)).toContain(leadB);
+    const byId = await adminB.from('leads').select('*').eq('id', leadA);
+    expect(byId.error).toBeNull();
+    expect(byId.data).toEqual([]);
+  });
+
+  it.each([
+    ['claim_lead', () => ({ p_lead_id: leadA })],
+    ['set_lead_status', () => ({ p_lead_id: leadA, p_status: 'lost' })],
+    ['assign_lead', () => ({ p_lead_id: leadA, p_user_id: null })],
+    ['delete_lead', () => ({ p_lead_id: leadA, p_reason: 'tentativa cruzada' })],
+  ])('%s em lead da org A falha como inexistente e não altera nada', async (fn, args) => {
+    const { error } = await adminB.rpc(fn, args());
+    expect(error?.code).toBe('P0002');
+    expect(await leadOf(leadA)).toEqual({ status: 'new', assigned_to: null });
+  });
+
+  it('UPDATE e DELETE diretos em lead da org A falham', async () => {
+    const upd = await adminB.from('leads').update({ status: 'lost' }).eq('id', leadA);
+    expect(upd.error).not.toBeNull();
+    const del = await adminB.from('leads').delete().eq('id', leadA);
+    expect(del.error).not.toBeNull();
+    expect(await leadOf(leadA)).toEqual({ status: 'new', assigned_to: null });
+  });
+
+  it('não cadastra lead manual no empreendimento da org A', async () => {
+    const { error } = await adminB.rpc('create_manual_lead', {
+      p_development_id: devA.id,
+      p_unit_id: unitA.id,
+      p_name: 'Intruso',
+      p_phone: '11987654321',
+      p_email: null,
+      p_message: null,
+      p_consent_in_person: true,
+    });
+    expect(error?.message).toBe('development_not_found');
+  });
+
+  it('não altera a configuração nem gera o segredo do webhook da org A', async () => {
+    const upd = await adminB
+      .from('organization_settings')
+      .update({ webhook_url: 'https://intruso.test/hook' })
+      .eq('organization_id', devA.organization_id)
+      .select();
+    expect(upd.data ?? []).toEqual([]);
+    const ins = await adminB
+      .from('organization_settings')
+      .upsert({ organization_id: devA.organization_id, webhook_url: 'https://intruso.test/hook' });
+    expect(ins.error).not.toBeNull();
+    const { data } = await service
+      .from('organization_settings')
+      .select('webhook_url')
+      .eq('organization_id', devA.organization_id)
+      .single();
+    expect(data!.webhook_url).not.toBe('https://intruso.test/hook');
+
+    const rotate = await adminB.rpc('rotate_webhook_secret', {
+      p_organization_id: devA.organization_id,
+    });
+    expect(rotate.error?.code).toBe('42501');
+  });
+});

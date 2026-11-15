@@ -1,6 +1,7 @@
 /* Página pública do empreendimento.
- * Celular: prédio em tela cheia, cabeçalho + legenda por cima, ficha como folha inferior.
- * Desktop (≥ 900 px): prédio à esquerda, painel lateral de 360 px à direita. */
+ * Celular: prédio em tela cheia; cabeçalho + legenda/filtros por cima; embaixo, faixa de
+ * andares e, quando há unidade selecionada, a ficha como folha inferior.
+ * Desktop (≥ 900 px): coluna de andares à esquerda do prédio, painel de 360 px à direita. */
 
 .root {
   position: relative;
@@ -70,9 +71,6 @@
 }
 
 .disclaimer {
-  position: absolute;
-  left: 16px;
-  bottom: max(12px, env(safe-area-inset-bottom));
   margin: 0;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -144,7 +142,7 @@
   margin: 0;
   padding: 0;
   display: flex;
-  gap: 6px 12px;
+  gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
   font-size: 12px;
@@ -152,9 +150,6 @@
 
 .legend li {
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .swatch {
@@ -177,14 +172,136 @@
   color: var(--color-cinza-quente);
 }
 
-/* ----------------------------------------------------- ficha (folha inferior) */
-.details {
-  position: fixed;
+/* ------------------------------------------------------------ filtros */
+.filters {
+  display: grid;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-nanquim);
+  background: rgba(243, 239, 231, 0.92);
+  border: 1px solid var(--color-areia);
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  border-color: var(--color-musgo);
+}
+
+.chip[aria-pressed='false'] {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.filterRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.matching {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-cinza-quente);
+}
+
+.clear {
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-musgo);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  padding: 4px;
+  cursor: pointer;
+}
+
+/* --------------------------------------- celular: faixa de andares + folha inferior */
+.dock {
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 10;
-  padding: 14px 16px max(16px, env(safe-area-inset-bottom));
+  display: grid;
+  gap: 6px;
+  padding-bottom: env(safe-area-inset-bottom);
+  pointer-events: none; /* o prédio continua tocável entre os botões */
+}
+
+.dock > * {
+  pointer-events: auto;
+}
+
+.disclaimerMobile {
+  padding: 0 16px;
+  pointer-events: none !important;
+}
+
+.disclaimerDesktop {
+  display: none;
+}
+
+.floorNav {
+  display: flex;
+  gap: 6px;
+  padding: 0 12px 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-padding: 0 12px;
+}
+
+.floorNav::-webkit-scrollbar {
+  display: none;
+}
+
+.floorBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  min-height: 40px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-musgo);
+  background: var(--color-papel);
+  border: 1px solid var(--color-musgo);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.floorBtn[aria-pressed='true'] {
+  color: var(--color-papel);
+  background: var(--color-musgo);
+}
+
+.floorNum {
+  font-weight: 600;
+}
+
+.floorFree {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.floorFree[data-none] {
+  opacity: 0.5;
+}
+
+/* ----------------------------------------------------- ficha (folha inferior) */
+.details {
+  padding: 14px 16px 16px;
   background: var(--color-papel);
   border-top: 1px solid var(--color-musgo);
   box-shadow: 0 -8px 24px rgba(26, 36, 32, 0.08);
@@ -304,8 +421,49 @@
     display: block;
   }
 
+  .dock {
+    left: 16px;
+    right: auto;
+    top: 16px;
+    bottom: 16px;
+    width: 132px;
+    align-content: start;
+    overflow-y: auto;
+    padding-bottom: 0;
+  }
+
+  .floorNav {
+    flex-direction: column;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .floorBtn {
+    justify-content: flex-start;
+  }
+
+  .disclaimerMobile {
+    display: none;
+  }
+
+  .disclaimerDesktop {
+    display: block;
+    position: absolute;
+    right: 16px;
+    bottom: 12px;
+    pointer-events: none;
+  }
+
+  .legend li {
+    width: 100%;
+  }
+
+  .legend .chip {
+    width: 100%;
+    font-size: 14px;
+  }
+
   .details {
-    position: static;
     padding: 16px 0 0;
     border-top: 1px solid var(--color-musgo);
     box-shadow: none;
@@ -318,7 +476,7 @@
 .debug {
   position: absolute;
   right: 12px;
-  bottom: max(32px, calc(env(safe-area-inset-bottom) + 24px));
+  top: 42%;
   z-index: 5;
   width: 172px;
   padding: 6px 8px;

@@ -1,15 +1,28 @@
 'use client';
 // Só tipos: o viewer (three.js) chega pelo dynamic() abaixo.
-import type { ViewerStats } from '@vidomo/viewer';
-import type { ViewerManifest } from '@vidomo/viewer/types';
+import type { ViewerMode, ViewerStats } from '@vidomo/viewer';
+import { floorKeyOfUnit } from '@vidomo/viewer/naming';
+import type { UnitStatus, ViewerManifest, ViewInsets } from '@vidomo/viewer/types';
 import dynamic from 'next/dynamic';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { countByStatus, type PublicUnit } from '@/lib/public-development';
-import { useLiveUnitStatus, type LiveConnection } from '@/lib/use-live-unit-status';
-import { StatusLegend } from './StatusLegend';
-import { UnitDetails } from './UnitDetails';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  bedroomOptions as getBedroomOptions,
+  defaultFilters,
+  dimmedUnitKeys,
+  floorsFromUnits,
+  isDefaultFilters,
+  legendCounts,
+  toggleIn,
+  type Filters,
+} from '@/lib/explore';
 import { EMPTY_FPS, addFpsSample, type FpsSummary } from '@/lib/fps-summary';
+import type { PublicUnit } from '@/lib/public-development';
+import { useElementSize, useMediaQuery } from '@/lib/use-layout';
+import { useLiveUnitStatus, type LiveConnection } from '@/lib/use-live-unit-status';
+import { FilterBar } from './FilterBar';
+import { FloorNav } from './FloorNav';
 import { FpsOverlay } from './FpsOverlay';
+import { UnitDetails } from './UnitDetails';
 import { ViewerPlaceholder } from './ViewerPlaceholder';
 import styles from './explorer.module.css';
 
@@ -21,6 +34,8 @@ const Viewer = dynamic(() => import('./ClientOnlyViewer'), {
 
 /** Limite para ligar o tempo real mesmo se o 3D ainda não estiver pronto. */
 const LIVE_FALLBACK_MS = 6000;
+/** Folga em volta da área livre do 3D (px). */
+const INSET_GAP = 8;
 
 const CONNECTION_LABEL: Record<LiveConnection, string> = {
   connecting: 'conectando',
@@ -56,7 +71,13 @@ export function DevelopmentExplorer({
     return () => clearTimeout(id);
   }, []);
   const { units, statusMap, connection } = useLiveUnitStatus(slug, initialUnits, liveEnabled);
+
+  // Navegação: modo, andar ativo, unidade selecionada e filtros.
+  const [mode, setMode] = useState<ViewerMode>('building');
+  const [activeFloor, setActiveFloor] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Filters>(() => defaultFilters(initialUnits));
+
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -69,10 +90,47 @@ export function DevelopmentExplorer({
     () => (modelUrl ? { modelUrl, detailModelUrl: detailModelUrl ?? undefined } : null),
     [modelUrl, detailModelUrl],
   );
-  const counts = useMemo(() => countByStatus(statusMap), [statusMap]);
+
+  // Derivados do mapa de status em tempo real.
+  const floors = useMemo(() => floorsFromUnits(units, statusMap), [units, statusMap]);
+  const bedroomOptions = useMemo(() => getBedroomOptions(units), [units]);
+  const dimmed = useMemo(
+    () => dimmedUnitKeys(units, statusMap, filters),
+    [units, statusMap, filters],
+  );
+  const legend = useMemo(
+    () => legendCounts(units, statusMap, filters),
+    [units, statusMap, filters],
+  );
+  const filtersDefault = useMemo(() => isDefaultFilters(filters, units), [filters, units]);
+
   const unitsByKey = useMemo(() => new Map(units.map((u) => [u.object_key, u])), [units]);
   const selectedUnit = selected ? unitsByKey.get(selected) : undefined;
   const selectedStatus = selected ? statusMap[selected] : undefined;
+
+  // Toque no 3D. No modo edifício, o viewer também sugere o andar da unidade
+  // (onSelectFloor): entra no andar e a ficha abre.
+  const onSelectUnit = useCallback((key: string | null) => setSelected(key), []);
+  const onSelectFloor = useCallback((key: string) => {
+    setActiveFloor(key);
+    setMode('floor');
+  }, []);
+  const goFloor = useCallback((key: string) => {
+    setActiveFloor(key);
+    setMode('floor');
+    setSelected((s) => (s && floorKeyOfUnit(s) !== key ? null : s));
+  }, []);
+  const goBuilding = useCallback(() => setMode('building'), []);
+
+  const onToggleStatus = useCallback(
+    (s: UnitStatus) => setFilters((f) => ({ ...f, statuses: toggleIn(f.statuses, s) })),
+    [],
+  );
+  const onToggleBedrooms = useCallback(
+    (b: number) => setFilters((f) => ({ ...f, bedrooms: toggleIn(f.bedrooms, b) })),
+    [],
+  );
+  const onClearFilters = useCallback(() => setFilters(defaultFilters(units)), [units]);
 
   const onReady = useCallback(() => {
     setReady(true);
@@ -93,16 +151,41 @@ export function DevelopmentExplorer({
     setAttempt((a) => a + 1);
   }, []);
 
+  // Área do 3D coberta pela interface: o viewer enquadra o andar na área livre, então a
+  // folha inferior não cobre a unidade selecionada.
+  const isDesktop = useMediaQuery('(min-width: 900px)');
+  const panelRef = useRef<HTMLElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const panelSize = useElementSize(panelRef);
+  const dockSize = useElementSize(dockRef);
+  const insets = useMemo<ViewInsets>(
+    () =>
+      isDesktop
+        ? { left: dockSize.width + 2 * INSET_GAP }
+        : { top: panelSize.height + INSET_GAP, bottom: dockSize.height + INSET_GAP },
+    [isDesktop, panelSize.height, dockSize.width, dockSize.height],
+  );
+
+  const details =
+    selectedUnit && selectedStatus ? (
+      <UnitDetails unit={selectedUnit} status={selectedStatus} onClose={() => setSelected(null)} />
+    ) : null;
+
   return (
-    <div className={styles.root} data-viewer-ready={ready || undefined}>
+    <div className={styles.root} data-viewer-ready={ready || undefined} data-mode={mode}>
       <section className={styles.stage} aria-label={`Modelo 3D do ${name}`}>
         {manifest && !error && (
           <Viewer
             key={attempt}
             manifest={manifest}
             unitStatus={statusMap}
+            mode={mode}
+            activeFloor={activeFloor}
+            dimmedUnits={dimmed}
             selectedUnit={selected}
-            onSelectUnit={setSelected}
+            onSelectUnit={onSelectUnit}
+            onSelectFloor={onSelectFloor}
+            insets={insets}
             onReady={onReady}
             onError={onError}
             onDetailReady={onDetailReady}
@@ -117,7 +200,7 @@ export function DevelopmentExplorer({
             onRetry={manifest ? retry : undefined}
           />
         )}
-        <p className={styles.disclaimer}>Imagens ilustrativas</p>
+        <p className={`${styles.disclaimer} ${styles.disclaimerDesktop}`}>Imagens ilustrativas</p>
         {debug && (
           <FpsOverlay
             summary={fps}
@@ -130,7 +213,7 @@ export function DevelopmentExplorer({
         )}
       </section>
 
-      <aside className={styles.panel}>
+      <aside ref={panelRef} className={styles.panel}>
         <header className={styles.head}>
           <h1 className={styles.title}>{name}</h1>
           <p className={styles.live} data-state={connection}>
@@ -139,18 +222,33 @@ export function DevelopmentExplorer({
           </p>
         </header>
 
-        <StatusLegend counts={counts} />
+        <FilterBar
+          filters={filters}
+          counts={legend.byStatus}
+          matching={legend.matching}
+          total={legend.total}
+          bedroomOptions={bedroomOptions}
+          isDefault={filtersDefault}
+          onToggleStatus={onToggleStatus}
+          onToggleBedrooms={onToggleBedrooms}
+          onClear={onClearFilters}
+        />
 
-        {selectedUnit && selectedStatus ? (
-          <UnitDetails
-            unit={selectedUnit}
-            status={selectedStatus}
-            onClose={() => setSelected(null)}
-          />
-        ) : (
-          <p className={styles.hint}>Toque numa unidade para ver a ficha.</p>
-        )}
+        {isDesktop && (details ?? <p className={styles.hint}>Toque num andar ou numa unidade.</p>)}
       </aside>
+
+      {/* Celular: faixa de andares + folha inferior. Desktop: coluna de andares. */}
+      <div ref={dockRef} className={styles.dock}>
+        <p className={`${styles.disclaimer} ${styles.disclaimerMobile}`}>Imagens ilustrativas</p>
+        <FloorNav
+          floors={floors}
+          mode={mode}
+          activeFloor={activeFloor}
+          onFloor={goFloor}
+          onBuilding={goBuilding}
+        />
+        {!isDesktop && details}
+      </div>
     </div>
   );
 }

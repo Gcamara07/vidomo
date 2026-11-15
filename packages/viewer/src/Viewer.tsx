@@ -67,7 +67,14 @@ import { floorKeyOfUnit } from './naming';
 import { extractBuilding, type ScenePart } from './scene-model';
 import { classifyZone, towerFootprint, type Footprint, type PartZone } from './site';
 import { BRAND, PAPER_BACKGROUND, unitAppearance } from './styles';
-import type { CameraPreset, UnitStatus, UnitStatusMap, Vec3, ViewerManifest } from './types';
+import type {
+  CameraPreset,
+  UnitStatus,
+  UnitStatusMap,
+  Vec3,
+  ViewerManifest,
+  ViewInsets,
+} from './types';
 
 export type { ViewerMode } from './floors';
 
@@ -102,6 +109,11 @@ export interface ViewerProps {
   onModeChange?: (mode: ViewerMode) => void;
   /** Estado serializável ao fim de cada interação de câmera e de cada transição. */
   onViewChange?: (state: ViewerViewState) => void;
+  /**
+   * Área coberta por interface do app (px). O centro da imagem vai para o meio da área
+   * livre e o enquadramento usa a proporção dela (ex.: a ficha não cobre o andar).
+   */
+  insets?: ViewInsets;
   /** Câmera inicial (ex.: restaurada de um ViewerViewState). */
   initialCamera?: CameraPreset;
   /** Modelo leve (obrigatório) carregado e primeira cena montada: o prédio já é interativo. */
@@ -154,10 +166,13 @@ export function Viewer({
   onDetailError,
   onStats,
   autoRotate = false,
+  insets,
   className,
   style,
 }: ViewerProps) {
   const pointerDown = useRef<{ x: number; y: number } | null>(null);
+  // Valores primitivos: um objeto novo a cada render não dispara efeitos à toa.
+  const insetsKey = `${insets?.top ?? 0},${insets?.right ?? 0},${insets?.bottom ?? 0},${insets?.left ?? 0}`;
 
   return (
     <div
@@ -204,9 +219,11 @@ export function Viewer({
               onDetailReady={onDetailReady}
               onDetailError={onDetailError}
               autoRotate={autoRotate}
+              insets={insetsKey}
             />
           </Suspense>
         </ErrorBoundary>
+        <ViewOffset insets={insetsKey} />
         {onStats && <FrameStats onStats={onStats} />}
       </Canvas>
     </div>
@@ -234,6 +251,8 @@ interface BuildingProps {
   onDetailReady?: () => void;
   onDetailError?: (error: Error) => void;
   autoRotate: boolean;
+  /** "top,right,bottom,left" em px. */
+  insets: string;
 }
 
 /** Faixa de altura atual (para o toque ignorar o que está recortado). */
@@ -261,6 +280,7 @@ function Building({
   onDetailReady,
   onDetailError,
   autoRotate,
+  insets,
 }: BuildingProps) {
   // useDraco = false (não usamos Draco; evita baixar o decoder), useMeshopt = true.
   const gltf = useGLTF(manifest.modelUrl, false, true);
@@ -399,6 +419,7 @@ function Building({
         active={active}
         autoRotate={autoRotate}
         initialCamera={initialCamera}
+        insets={insets}
         onTransitionEnd={onTransitionEnd}
         onInteractionEnd={emitView}
       />
@@ -815,6 +836,7 @@ function CameraRig({
   active,
   autoRotate,
   initialCamera,
+  insets,
   onTransitionEnd,
   onInteractionEnd,
 }: {
@@ -824,6 +846,7 @@ function CameraRig({
   active: FloorLevel | undefined;
   autoRotate: boolean;
   initialCamera?: CameraPreset;
+  insets: string;
   onTransitionEnd: (camera: CameraPreset) => void;
   onInteractionEnd: (camera: CameraPreset) => void;
 }) {
@@ -833,13 +856,21 @@ function CameraRig({
   const anim = useRef<Anim | null>(null);
   const framing = useRef<Framing | null>(null);
   const appliedKey = useRef<string | null>(null);
-  const viewKey = `${mode}|${active?.key ?? ''}`;
+  // No modo andar, a área livre (insets) entra na chave: abrir/fechar a ficha reenquadra o
+  // andar. No modo edifício só o centro se ajusta (ViewOffset), sem desfazer o zoom.
+  const viewKey = mode === 'floor' ? `floor|${active?.key ?? ''}|${insets}` : 'building';
 
   const framingFor = useCallback(
     (azimuth?: number, usePreset = false): Framing => {
       const { camera, size } = get();
-      const fov = (camera as PerspectiveCamera).fov;
-      const aspect = size.width / Math.max(size.height, 1);
+      // Enquadra na área livre (descontando a interface do app por cima do 3D).
+      const [t, r, b, l] = insets.split(',').map(Number) as [number, number, number, number];
+      const visW = Math.max(size.width - l - r, 1);
+      const visH = Math.max(size.height - t - b, 1);
+      const fullFov = ((camera as PerspectiveCamera).fov * Math.PI) / 180;
+      const visHeightFraction = Math.min(visH / Math.max(size.height, 1), 1);
+      const fov = (2 * Math.atan(Math.tan(fullFov / 2) * visHeightFraction) * 180) / Math.PI;
+      const aspect = visW / visH;
       if (mode === 'floor' && active) {
         return computeFloorFraming(active, fov, aspect, azimuth ?? 0.56);
       }
@@ -851,7 +882,7 @@ function CameraRig({
         azimuth,
       );
     },
-    [get, mode, active, bounds, manifest.cameras?.default],
+    [get, mode, active, bounds, manifest.cameras?.default, insets],
   );
 
   const currentCamera = useCallback((): CameraPreset => {
@@ -974,6 +1005,25 @@ function CameraRig({
       }}
     />
   );
+}
+
+/**
+ * Desloca o centro da projeção para o meio da área livre (insets): o que está enquadrado
+ * aparece acima da folha inferior, ao lado da coluna de andares etc. Não move a câmera.
+ */
+function ViewOffset({ insets }: { insets: string }) {
+  const get = useThree((s) => s.get);
+  const width = useThree((s) => s.size.width);
+  const height = useThree((s) => s.size.height);
+  const invalidate = useThree((s) => s.invalidate);
+  useLayoutEffect(() => {
+    const cam = get().camera as PerspectiveCamera;
+    const [t, r, b, l] = insets.split(',').map(Number) as [number, number, number, number];
+    if (!t && !r && !b && !l) cam.clearViewOffset();
+    else cam.setViewOffset(width, height, (r - l) / 2, (b - t) / 2, width, height);
+    invalidate();
+  }, [get, insets, width, height, invalidate]);
+  return null;
 }
 
 /** Conta quadros desenhados (frameloop sob demanda: só conta quando algo muda). */

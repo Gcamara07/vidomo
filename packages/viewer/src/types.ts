@@ -36,3 +36,14 @@ export interface ViewerManifest {
   cameras?: { default?: CameraPreset } & Record<string, CameraPreset | undefined>;
   objectKeyPrefixes?: Partial<ObjectKeyPrefixes>;
 }
+
+/**
+ * Área da tela coberta por interface do app (em px CSS): cabeçalho, folha inferior, coluna
+ * de andares. O viewer centraliza e enquadra o prédio/andar na área livre.
+ */
+export interface ViewInsets {
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+}

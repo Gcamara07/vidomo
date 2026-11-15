@@ -20,6 +20,7 @@ export {
   type UnitStatusMap,
   type Vec3,
   type ViewerManifest,
+  type ViewInsets,
 } from './types';
 export {
   BRAND,

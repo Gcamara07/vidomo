@@ -66,6 +66,19 @@ export function parseUnitKey(objectKey: string): UnitKeyParts | null {
   return { tower: m[1]!, floor: Number(m[2]), code: m[3]! };
 }
 
+/** Decompõe um object_key de andar (ex.: 'TA__F08'). */
+export function parseFloorKey(objectKey: string): { tower: string; floor: number } | null {
+  const m = KEY_PATTERNS.floor.exec(objectKey);
+  if (!m) return null;
+  return { tower: m[1]!, floor: Number(m[2]) };
+}
+
+/** object_key do andar de uma unidade ('TA__F08__U802' → 'TA__F08'). */
+export function floorKeyOfUnit(unitKey: string): string | null {
+  const p = parseUnitKey(unitKey);
+  return p ? floorObjectKey(p.tower, p.floor) : null;
+}
+
 /** Monta o object_key de unidade a partir das partes (andar com 2 dígitos). */
 export function unitObjectKey(tower: string, floor: number, code: string | number): string {
   return `${tower}__F${String(floor).padStart(2, '0')}__U${code}`;

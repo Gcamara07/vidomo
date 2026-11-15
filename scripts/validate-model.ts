@@ -19,11 +19,14 @@ import {
   type ModelLayer,
 } from './lib/model-validation';
 import { developmentKeys, serviceClient } from './lib/supabase-env';
+import { classifyObjects, footprintOf } from './lib/zones';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     slug: { type: 'string', default: 'residencial-vista' },
+    // Camada de detalhes: modelo leve de referência para a projeção da torre.
+    base: { type: 'string', default: 'scripts/out/residencial-vista-leve.glb' },
     layer: { type: 'string', default: 'base' },
     json: { type: 'boolean', default: false },
   },
@@ -48,9 +51,12 @@ async function main() {
 
   const db = await developmentKeys(serviceClient(), values.slug!);
   const report = compareModel(names, db, size, layer);
+  // Torre × entorno (como o viewer classifica no modo andar).
+  const baseDoc = layer === 'base' ? doc : await io.read(resolve(values.base!));
+  const zones = classifyObjects(doc, footprintOf(baseDoc));
 
   if (values.json) {
-    console.log(JSON.stringify({ file, slug: values.slug, ...report }, null, 2));
+    console.log(JSON.stringify({ file, slug: values.slug, ...report, zones }, null, 2));
   } else {
     const list = (title: string, xs: string[], blocking = true) => {
       const mark = xs.length === 0 ? 'ok' : blocking ? 'ERRO' : 'aviso';
@@ -86,6 +92,8 @@ async function main() {
       `  [${sizeMark}] Peso: ${(size / 1024).toFixed(1)} KiB (${mb(size)} MB; ${budget})`,
     );
     for (const w of report.warnings) console.log(`  [aviso] ${w}`);
+    console.log(`  [info] Torre (recortada por andar): ${zones.tower.join(', ') || '—'}`);
+    console.log(`  [info] Entorno (sempre visível): ${zones.site.join(', ') || '—'}`);
     console.log(
       report.ok
         ? `Resultado: modelo compatível${report.warnings.length ? ' (com avisos)' : ''}.`

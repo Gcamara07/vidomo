@@ -2,8 +2,10 @@
  * Exemplo isolado do <Viewer> com status falsos (sem Supabase).
  *   pnpm --filter @vidomo/viewer example
  * Query string:
- *   ?model=<url>   GLB leve (padrão: /residencial-vista-test.glb de scripts/out)
- *   ?detail=<url>  GLB de detalhes (ex.: /residencial-vista-test-detalhes.glb)
+ *   ?model=<url>   GLB leve (padrão: /residencial-vista-leve.glb de scripts/out)
+ *   ?detail=<url>  GLB de detalhes (padrão: /residencial-vista-detalhes.glb; ?detail=none desliga)
+ * Controles: modo edifício/andar, seletor de andar, filtros de status e dormitórios
+ * (esmaecem unidades), estado serializável (onViewChange).
  */
 import { StrictMode, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -15,16 +17,25 @@ import {
   parseUnitKey,
   swatchBackground,
   unitObjectKey,
+  floorObjectKey,
   type UnitStatus,
   type UnitStatusMap,
   type ViewerManifest,
+  type ViewerMode,
+  type ViewerViewState,
 } from '../src';
+
+/** Como no seed: finais 1 e 3 = 2 dorms (Tipo A); 2 e 4 = 3 dorms (Tipo B). */
+const bedroomsOf = (key: string) => (Number(parseUnitKey(key)?.code.slice(-1)) % 2 === 1 ? 2 : 3);
+const FLOORS = Array.from({ length: 10 }, (_, i) => 10 - i);
 
 const params = new URLSearchParams(location.search);
 const manifest: ViewerManifest = {
-  modelUrl: params.get('model') ?? '/residencial-vista-test.glb',
-  // Camada 2 opcional: ?detail=/residencial-vista-test-detalhes.glb
-  detailModelUrl: params.get('detail') ?? undefined,
+  modelUrl: params.get('model') ?? '/residencial-vista-leve.glb',
+  detailModelUrl:
+    params.get('detail') === 'none'
+      ? undefined
+      : (params.get('detail') ?? '/residencial-vista-detalhes.glb'),
 };
 
 /** 40 unidades falsas: torre TA, 10 andares × 4. */
@@ -62,6 +73,29 @@ function App() {
   const [auto, setAuto] = useState(false);
   const [readyMs, setReadyMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<ViewerMode>('building');
+  const [activeFloor, setActiveFloor] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<Set<UnitStatus>>(() => new Set(UNIT_STATUSES));
+  const [bedroomFilter, setBedroomFilter] = useState<Set<number>>(() => new Set([2, 3]));
+  const [view, setView] = useState<ViewerViewState | null>(null);
+
+  const dimmedUnits = useMemo(
+    () =>
+      new Set(
+        UNIT_KEYS.filter((k) => !statusFilter.has(status[k]!) || !bedroomFilter.has(bedroomsOf(k))),
+      ),
+    [status, statusFilter, bedroomFilter],
+  );
+  const goFloor = (key: string) => {
+    setActiveFloor(key);
+    setMode('floor');
+  };
+  const toggle = <T,>(set: Set<T>, v: T) => {
+    const next = new Set(set);
+    if (next.has(v)) next.delete(v);
+    else next.add(v);
+    return next;
+  };
 
   const randomChange = useCallback(() => {
     setStatus((prev) => {
@@ -90,8 +124,13 @@ function App() {
       <Viewer
         manifest={manifest}
         unitStatus={status}
+        mode={mode}
+        activeFloor={activeFloor}
+        dimmedUnits={dimmedUnits}
         selectedUnit={selected}
         onSelectUnit={setSelected}
+        onSelectFloor={goFloor}
+        onViewChange={setView}
         onReady={() => setReadyMs(Math.round(performance.now()))}
         onError={(e) => setError(e.message)}
         style={{ position: 'absolute', inset: 0 }}
@@ -142,11 +181,52 @@ function App() {
       >
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
           {UNIT_STATUSES.map((s) => (
-            <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <button
+              key={s}
+              type="button"
+              aria-pressed={statusFilter.has(s)}
+              onClick={() => setStatusFilter((f) => toggle(f, s))}
+              style={{ ...chipStyle, opacity: statusFilter.has(s) ? 1 : 0.4 }}
+            >
               <span style={swatchStyle(s)} />
               {STATUS_LABELS[s]} <span style={{ ...mono, color: '#6B6A63' }}>{counts[s]}</span>
-            </span>
+            </button>
           ))}
+          {[2, 3].map((b) => (
+            <button
+              key={b}
+              type="button"
+              aria-pressed={bedroomFilter.has(b)}
+              onClick={() => setBedroomFilter((f) => toggle(f, b))}
+              style={{ ...chipStyle, opacity: bedroomFilter.has(b) ? 1 : 0.4 }}
+            >
+              {b} dorms
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
+          <button
+            type="button"
+            onClick={() => setMode('building')}
+            style={{ ...floorBtn, ...(mode === 'building' ? floorBtnOn : {}) }}
+          >
+            Ver prédio
+          </button>
+          {FLOORS.map((n) => {
+            const key = floorObjectKey('TA', n);
+            const on = mode === 'floor' && activeFloor === key;
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => goFloor(key)}
+                style={{ ...floorBtn, ...(on ? floorBtnOn : {}) }}
+              >
+                {n}º
+              </button>
+            );
+          })}
         </div>
 
         <div style={{ ...mono, fontSize: 12, minHeight: 18 }}>
@@ -167,6 +247,10 @@ function App() {
           <button type="button" onClick={() => setAuto((a) => !a)} style={buttonStyle}>
             {auto ? 'Parar automático' : 'Automático (1,5 s)'}
           </button>
+          <details style={{ ...mono, fontSize: 11 }}>
+            <summary>estado</summary>
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(view)}</pre>
+          </details>
           {selected && (
             <select
               value={status[selected]}
@@ -187,6 +271,31 @@ function App() {
     </div>
   );
 }
+
+const chipStyle: CSSProperties = {
+  font: 'inherit',
+  fontSize: 12,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '4px 6px',
+  border: `1px solid ${BRAND.areia}`,
+  background: 'transparent',
+  cursor: 'pointer',
+};
+
+const floorBtn: CSSProperties = {
+  font: 'inherit',
+  fontSize: 12,
+  flex: 'none',
+  minWidth: 40,
+  minHeight: 34,
+  border: `1px solid ${BRAND.musgo}`,
+  background: 'transparent',
+  color: BRAND.musgo,
+  cursor: 'pointer',
+};
+const floorBtnOn: CSSProperties = { background: BRAND.musgo, color: BRAND.papel };
 
 const buttonStyle: CSSProperties = {
   font: 'inherit',

@@ -28,3 +28,12 @@ modelos/*.blend
 modelos/*.blend1
 # Renders de conferência exportados do Blender
 modelos/preview-*.png
+
+# Segredos e anotações locais na raiz (senhas, chaves, rascunhos .txt)
+/*senha*
+/*Senha*
+/*secret*
+/*segredo*
+/*.txt
+*.pem
+*.key

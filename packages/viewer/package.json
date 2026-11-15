@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./naming": "./src/naming.ts",
     "./styles": "./src/styles.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./site": "./src/site.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

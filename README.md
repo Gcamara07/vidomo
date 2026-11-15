@@ -4,7 +4,7 @@ Fatia vertical da Vidomo: um prédio 3D no celular cujas unidades mudam de cor e
 real quando o status muda no banco. Contexto, regras e marca em [CLAUDE.md](CLAUDE.md).
 
 ```
-apps/web          Next.js 16 (App Router): /e/[slug] (público), /login, /painel/dev-status
+apps/web          Next.js 16 (App Router): /e/[slug] (público, ?u=802 / ?andar=8), /login, /painel/dev-status
 packages/viewer   <Viewer> em React Three Fiber + drei (não conhece o banco) + exemplo isolado
 supabase/         migrations SQL, seed, testes de RLS/Realtime (Vitest)
 scripts/          gerar/validar/enviar o GLB de teste, medir a demo
@@ -70,6 +70,16 @@ pnpm dev             # http://localhost:3000/e/residencial-vista
   grava em `scripts/out/` (reproduzível, fora do git).
 - `pnpm model:validate` e `pnpm model:upload` usam `scripts/out/residencial-vista-leve.glb`
   por padrão; o upload vai para `developments.model_path`.
+- **Torre × entorno (camada de detalhes):** no modo andar, o que é da torre é recortado na
+  altura do andar e o entorno (terreno, rua, portaria, árvores, áreas comuns) fica sempre
+  inteiro. A separação é pela projeção no chão: o que cai dentro da pegada de `TOWER__` e
+  das lajes `FLOOR__`, com 2 m de margem, é torre; o resto é entorno.
+  `pnpm model:validate scripts/out/residencial-vista-detalhes.glb --layer detail` lista as
+  duas listas ("Torre (recortada por andar)" e "Entorno (sempre visível)"); confira ali se
+  algo caiu do lado errado. TODO: convenção explícita `SITE__` no Blender.
+- **Plantas:** imagens no bucket público `plans`, caminho em `unit_types.plan_image_path`
+  (lido sempre por `getAssetUrl(path, 'plans')`). Sem imagem, a ficha mostra "Planta
+  disponível em breve".
 
 ### Prédio de teste (caixas) e simulações
 
@@ -97,7 +107,7 @@ pnpm model:upload scripts/out/residencial-vista-test.glb   # troca o modelo real
 
 ```bash
 pnpm test:unit  # sem banco: viewer, scripts, web
-pnpm test:db    # isolamento multiempresa, acesso anônimo, histórico e Realtime
+pnpm test:db    # isolamento multiempresa, acesso anônimo, preço por price_display, histórico e Realtime
 pnpm test       # tudo (precisa do Supabase local rodando)
 pnpm lint && pnpm typecheck
 ```
@@ -157,6 +167,27 @@ do menu de throttling (~1,44 Mbit/s, 562 ms de latência; `--network fast4g` usa
 cache desligado e tela 360×800 @2x. Mede FCP, tempo até o prédio ficar interativo
 (`vidomo:viewer-ready`), até os detalhes entrarem (`vidomo:detail-ready`), JS da página, do
 viewer e do supabase-js (gzip), GLBs e fps girando o prédio. A GPU é a do PC.
+
+**Troca de andar:** a página marca `vidomo:view-settled` quando a câmera termina uma
+transição (troca de andar ou volta ao prédio). O tempo vai do clique no seletor até essa
+marca: 500 ms de animação (easeInOutCubic) mais um quadro; com "reduzir movimento" no
+sistema, a troca é imediata.
+
+**Resultados (build de produção local, tela 360×800 @2x, mediana de 3, novembro de 2026):**
+
+| Medida                                  | 4G rápido   | 4G rápido + CPU 4× | Meta            |
+| --------------------------------------- | ----------- | ------------------ | --------------- |
+| Prédio interativo                       | 1,53 s      | 1,92 s             | ≤ 1,69 s (base) |
+| Detalhes na tela                        | 1,98 s      | 2,51 s             | —               |
+| Troca de andar (clique → câmera parada) | 0,51–0,54 s | 0,54–0,59 s        | —               |
+| fps girando o prédio (GPU do PC)        | 60          | 60                 | ≥ 30            |
+
+JS gzip: página 143 KB, viewer/three.js 274 KB, supabase-js 67 KB (sob demanda). GLB leve
+19 KB, detalhes 157 KB. Meta do Bloco 1: até 1,69 s; a demo publicada antes dele media
+1,54 s e o build local 1,52 s, ou seja, modos, filtros e ficha quase não mudaram o tempo até
+interativo.
+Draw calls: prédio 140, 8º andar 94, 1º andar 59. No celular de referência, modo andar:
+60 fps de média, 54 de mínimo.
 
 **fps no celular:** abra a demo com `?debug=1` (ex.: `http://<IP>:3000/e/residencial-vista?debug=1`).
 Aparece um contador com fps, média e mínimo enquanto o prédio gira, tempos até interativo e
@@ -313,7 +344,28 @@ pnpm measure --network fast4g --url https://vidomo.vercel.app/e/residencial-vist
   `set_unit_status(p_unit_id, p_new_status, p_reason)`, que valida papel, trava a linha
   (`FOR UPDATE`) e grava `unit_status_history` por trigger (imutável).
 - **Leitura pública**: `public_development(slug)` e `public_development_units(slug)` — só
-  empreendimento publicado, sem preço.
+  empreendimento publicado e campos públicos (código, andar, tipo, área, dormitórios,
+  suítes, planta, face, frente/fundos, status, preço resolvido).
+- **Preço** (`private.public_unit_price`, no banco; o front só formata): `price_display`
+  oculto → sem preço ("Consulte condições"); exato → preço da unidade; a partir de → menor
+  preço entre as unidades **disponíveis** do mesmo tipo (sem nenhuma disponível, sem preço).
+  Vendida nunca mostra preço, em qualquer modo. Depois de cada mudança de status a página
+  relê os preços (agrupado em 800 ms), porque o "a partir de" depende das disponíveis.
+- **Explorar (página pública)**:
+  - Modo prédio e modo andar. No modo andar, a torre é recortada na altura do andar
+    (acima some; abaixo vira silhueta clara, sem toque) e o entorno fica inteiro. A câmera
+    enquadra o andar em vista oblíqua mantendo o lado de onde se olhava.
+  - Seletor de andares com as unidades livres de cada um; filtros por status e
+    dormitórios esmaecem (não escondem) quem não atende, com "N de 40" e "Limpar".
+  - Ficha completa: planta, área, dormitórios, suítes, face (norte = +Y do Blender;
+    finais 1 e 2 norte/frente, 3 e 4 sul/fundos), código, status e preço; "Copiar link"
+    (no celular abre o compartilhar do sistema). TODO: seta de norte; "Tenho interesse"
+    (Bloco 2).
+  - Links: `?u=802` abre o andar com a unidade selecionada; `?andar=8` abre o andar
+    (com uma torre só). Inválido cai no prédio e a URL é limpa. A URL acompanha a
+    navegação (`replaceState`, sem encher o histórico) e preserva outros parâmetros.
+  - O viewer recebe as áreas cobertas pela ficha e pelo seletor (`insets`) e centraliza
+    o prédio/andar na área livre, para a ficha não cobrir a unidade selecionada.
 - **Realtime**: a página pública assina o Broadcast privado `development:<slug>` (só o
   trigger publica `{object_key, status}`; o anônimo só recebe) e relê tudo ao
   conectar/reconectar, ao voltar do segundo plano e quando a rede volta. O painel usa
@@ -323,9 +375,9 @@ pnpm measure --network fast4g --url https://vidomo.vercel.app/e/residencial-vist
   navegador), o GLB leve também; o de detalhes só depois do prédio interativo. O supabase-js
   (tempo real) é importado sob demanda e conecta depois que o prédio fica interativo (ou em
   6 s); as fontes pré-carregadas são só as da primeira tela.
-- **Arquivos 3D**: sempre via `getAssetUrl()` (bucket público `models`).
+- **Arquivos 3D e plantas**: sempre via `getAssetUrl()` (buckets públicos `models` e `plans`).
 
 Fora desta fatia (com TODOs no código): leads, reservas com prazo (`reserve_unit`),
 quiosque, panoramas 360°, admin completo, subdomínios e tema por organização, regras finas
-de transição de status (PRD 6.1), preço conforme `price_display`, URLs assinadas para
+de transição de status (PRD 6.1), "Tenho interesse", URLs assinadas para
 modelos de rascunho.

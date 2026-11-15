@@ -154,6 +154,10 @@ export function DevelopmentExplorer({
     setLiveEnabled(true);
     setReadyMs(performance.mark('vidomo:viewer-ready').startTime);
   }, []);
+  // Marca de medição: a câmera terminou uma transição (troca de modo/andar).
+  const onViewSettled = useCallback(() => {
+    performance.mark('vidomo:view-settled');
+  }, []);
   const onDetailReady = useCallback(() => {
     setDetailMs(performance.mark('vidomo:detail-ready').startTime);
   }, []);
@@ -207,6 +211,7 @@ export function DevelopmentExplorer({
             selectedUnit={selected}
             onSelectUnit={onSelectUnit}
             onSelectFloor={onSelectFloor}
+            onViewChange={onViewSettled}
             insets={insets}
             onReady={onReady}
             onError={onError}

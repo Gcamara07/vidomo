@@ -72,6 +72,28 @@ async function leadRow(id: string) {
 }
 
 const createdLeads: string[] = [];
+/** Entregas que já existiam antes dos testes: o resto é apagado no fim. */
+let deliveriesBefore = new Set<string>();
+const TEST_HOOK = 'https://n8n.exemplo.test/webhook/vidomo';
+
+/** Webhook da org A: URL e, se pedido, segredo gerado (webhook ativo = URL + segredo). */
+async function setWebhook(url: string | null, withSecret: boolean) {
+  const r = await service
+    .from('organization_settings')
+    .update({ webhook_url: url, webhook_secret_set_at: null })
+    .eq('organization_id', ORG_A);
+  if (r.error) throw r.error;
+  if (withSecret) {
+    const s = await adminA.rpc('rotate_webhook_secret', { p_organization_id: ORG_A });
+    if (s.error) throw s.error;
+  }
+}
+
+async function deliveryIds(): Promise<string[]> {
+  const { data, error } = await service.from('notification_deliveries').select('id');
+  if (error) throw error;
+  return data.map((d) => d.id as string);
+}
 
 beforeAll(async () => {
   [adminA, salesA, adminB] = await Promise.all([
@@ -91,6 +113,9 @@ beforeAll(async () => {
     .eq('code', '802')
     .single();
   unit802Id = u!.id;
+
+  deliveriesBefore = new Set(await deliveryIds());
+  await setWebhook(null, false);
 });
 
 afterAll(async () => {
@@ -99,11 +124,24 @@ afterAll(async () => {
     const del = await service.from('leads').delete().in('id', createdLeads);
     if (del.error) throw del.error;
   }
+  // lead.deleted e test não têm lead (não somem em cascata): apaga o que os testes criaram.
+  const leftover = (await deliveryIds()).filter((id) => !deliveriesBefore.has(id));
+  if (leftover.length) {
+    const del = await service.from('notification_deliveries').delete().in('id', leftover);
+    if (del.error) throw del.error;
+  }
   const restore = await service
     .from('organization_settings')
-    .update({ webhook_url: null, notification_emails: ['comercial@exemplo.test'] })
+    .update({
+      webhook_url: null,
+      webhook_secret_set_at: null,
+      notification_emails: ['comercial@exemplo.test'],
+    })
     .eq('organization_id', ORG_A);
   if (restore.error) throw restore.error;
+  // Os testes não podem deixar entregas pendentes na fila.
+  const remaining = (await deliveryIds()).filter((id) => !deliveriesBefore.has(id));
+  if (remaining.length) throw new Error(`entregas deixadas pelos testes: ${remaining.join(', ')}`);
   await Promise.all([adminA, salesA, adminB].map((c) => c.auth.signOut()));
   await Promise.all([adminA, salesA, adminB, anon, service].map((c) => c.removeAllChannels()));
 });
@@ -261,13 +299,18 @@ describe('fila de notificações', () => {
     ]);
   });
 
-  it('com webhook configurado, enfileira e-mail e webhook', async () => {
+  it('URL de webhook sem segredo gerado: só o e-mail (sem segredo não há como assinar)', async () => {
+    await setWebhook(TEST_HOOK, false);
+    const id = await createLead();
+    createdLeads.push(id);
+    expect((await deliveriesOf(id))!.map((d) => d.channel)).toEqual(['email']);
+  });
+
+  it('com webhook ativo (URL + segredo), enfileira e-mail e webhook', async () => {
+    await setWebhook(TEST_HOOK, true);
     await adminA
       .from('organization_settings')
-      .update({
-        webhook_url: 'https://n8n.exemplo.test/webhook/vidomo',
-        notification_emails: ['comercial@exemplo.test', 'gerente@exemplo.test'],
-      })
+      .update({ notification_emails: ['comercial@exemplo.test', 'gerente@exemplo.test'] })
       .eq('organization_id', ORG_A);
     const id = await createLead();
     createdLeads.push(id);
@@ -553,11 +596,21 @@ describe('exclusão a pedido do titular (LGPD)', () => {
     expect(await leadRow(id)).not.toBeNull();
   });
 
+  it('webhook sem segredo: a exclusão não enfileira lead.deleted (mesma regra do lead.created)', async () => {
+    await setWebhook(TEST_HOOK, false);
+    const id = await createLead();
+    const { error } = await adminA.rpc('delete_lead', { p_lead_id: id, p_reason: 'teste' });
+    expect(error).toBeNull();
+    const { data } = await service
+      .from('notification_deliveries')
+      .select('id')
+      .eq('event', 'lead.deleted')
+      .contains('payload', { lead: { id } });
+    expect(data).toEqual([]);
+  });
+
   it('admin exclui: lead e entregas somem, fica registro sem dado pessoal e sai lead.deleted', async () => {
-    await adminA
-      .from('organization_settings')
-      .update({ webhook_url: 'https://n8n.exemplo.test/webhook/vidomo' })
-      .eq('organization_id', ORG_A);
+    await setWebhook(TEST_HOOK, true);
     const id = await createLead({ p_email: email(), p_message: 'Apague meus dados depois.' });
     const { data: queued } = await service
       .from('notification_deliveries')

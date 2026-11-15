@@ -15,6 +15,9 @@ type Channel = ReturnType<Client['channel']>;
 
 export type LiveConnection = 'connecting' | 'live' | 'offline';
 
+/** Espera após uma mudança de status antes de reler preços/fichas (agrupa rajadas). */
+const REFRESH_AFTER_CHANGE_MS = 800;
+
 /**
  * Status das unidades em tempo real para a página pública.
  *
@@ -46,6 +49,7 @@ export function useLiveUnitStatus(
     let inFlight = false;
     let queued = false;
     let duringFetch: unknown[] = [];
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
     const resync = async () => {
       if (!client) return; // ainda carregando o supabase-js; a assinatura relê ao conectar
@@ -81,6 +85,10 @@ export function useLiveUnitStatus(
         .on('broadcast', { event: 'unit_status' }, ({ payload }) => {
           if (inFlight) duringFetch.push(payload);
           setStatusMap((m) => applyStatusMessage(m, payload));
+          // O Broadcast traz só o status; o preço "a partir de" depende das disponíveis do tipo.
+          // Relê (agrupado) para preços e fichas acompanharem a mudança.
+          if (refreshTimer) clearTimeout(refreshTimer);
+          refreshTimer = setTimeout(() => void resync(), REFRESH_AFTER_CHANGE_MS);
         })
         .subscribe((status) => {
           if (disposed) return;
@@ -107,6 +115,7 @@ export function useLiveUnitStatus(
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
+      if (refreshTimer) clearTimeout(refreshTimer);
       if (client && channel) void client.removeChannel(channel);
     };
   }, [slug, enabled]);

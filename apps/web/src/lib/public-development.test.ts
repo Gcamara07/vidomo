@@ -14,7 +14,13 @@ const unit = (object_key: string, status: PublicUnit['status']): PublicUnit => (
   unit_type_name: 'Tipo A',
   area_m2: 58.4,
   bedrooms: 2,
+  suites: 1,
+  plan_image_path: null,
+  facade: null,
+  frontage: null,
   status,
+  price: null,
+  price_kind: null,
 });
 
 describe('mapa de status', () => {

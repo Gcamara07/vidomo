@@ -8,7 +8,8 @@
 -- Aplicar (pede confirmação; é escrita no remoto):
 --   pnpm exec supabase db query --remote -f supabase/demo-seed.sql
 --
--- Idempotente: se o Residencial Vista já existir, não faz nada.
+-- Idempotente: se o Residencial Vista já existir, não recria nada; só completa os atributos
+-- que vieram depois (suítes, face, frente/fundos) onde ainda estiverem vazios.
 -- ATENÇÃO: nunca rode `supabase db reset --remote` — ele aplicaria o seed.sql de dev.
 
 do $$
@@ -52,12 +53,12 @@ begin
   returning id into v_tower;
 
   -- Conforme o modelo do Blender: finais 1 e 3 Tipo A, finais 2 e 4 Tipo B.
-  insert into public.unit_types (organization_id, development_id, name, area_m2, bedrooms)
-  values (v_org, v_dev, 'Tipo A', 58.00, 2)
+  insert into public.unit_types (organization_id, development_id, name, area_m2, bedrooms, suites)
+  values (v_org, v_dev, 'Tipo A', 58.00, 2, 1)
   returning id into v_type_a;
 
-  insert into public.unit_types (organization_id, development_id, name, area_m2, bedrooms)
-  values (v_org, v_dev, 'Tipo B', 75.00, 3)
+  insert into public.unit_types (organization_id, development_id, name, area_m2, bedrooms, suites)
+  values (v_org, v_dev, 'Tipo B', 75.00, 3, 1)
   returning id into v_type_b;
 
   for f in 1..10 loop
@@ -70,14 +71,18 @@ begin
       v_status := v_cycle[1 + ((f - 1) * 4 + (p - 1)) % array_length(v_cycle, 1)];
       insert into public.units (
         organization_id, development_id, tower_id, floor_id, unit_type_id,
-        code, object_key, status, price
+        code, object_key, status, price, facade, frontage
       ) values (
         v_org, v_dev, v_tower, v_floor,
         case when p % 2 = 1 then v_type_a else v_type_b end,
         v_code::text,
         format('TA__F%s__U%s', lpad(f::text, 2, '0'), v_code),
         v_status,
-        (case when p % 2 = 1 then 420000 else 530000 end) + f * 8000
+        (case when p % 2 = 1 then 420000 else 530000 end) + f * 8000,
+        -- Modelo do Blender (+Y = norte): finais 1 e 2 na face norte, lado da rua (frente);
+        -- 3 e 4 na face sul, lado da piscina e do lazer (fundos).
+        case when p <= 2 then 'norte' else 'sul' end,
+        case when p <= 2 then 'frente' else 'fundos' end
       );
     end loop;
   end loop;
@@ -85,3 +90,20 @@ begin
   raise notice 'Residencial Vista criado com 40 unidades.';
 end;
 $$;
+
+-- Atributos da ficha completa (Bloco 1): completa dados já existentes, sem sobrescrever.
+update public.unit_types ut
+   set suites = 1
+  from public.developments d
+ where d.id = ut.development_id
+   and d.slug = 'residencial-vista'
+   and ut.name in ('Tipo A', 'Tipo B')
+   and ut.suites is null;
+
+update public.units u
+   set facade = case when right(u.code, 1) in ('1', '2') then 'norte' else 'sul' end,
+       frontage = case when right(u.code, 1) in ('1', '2') then 'frente' else 'fundos' end
+  from public.developments d
+ where d.id = u.development_id
+   and d.slug = 'residencial-vista'
+   and (u.facade is null or u.frontage is null);

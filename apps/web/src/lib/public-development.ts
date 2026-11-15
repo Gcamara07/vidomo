@@ -22,7 +22,16 @@ export interface PublicUnit {
   unit_type_name: string | null;
   area_m2: number | null;
   bedrooms: number | null;
+  suites: number | null;
+  /** Caminho da planta 2D no bucket "plans" (null: planta ainda não disponível). */
+  plan_image_path: string | null;
+  facade: 'norte' | 'sul' | 'leste' | 'oeste' | null;
+  frontage: 'frente' | 'fundos' | null;
   status: UnitStatus;
+  /** Preço já resolvido no banco pela regra do empreendimento (null: não mostrar). */
+  price: number | null;
+  /** 'from' = "a partir de"; 'exact' = preço da unidade; null = "Consulte condições". */
+  price_kind: 'from' | 'exact' | null;
 }
 
 export async function fetchPublicDevelopment(
@@ -44,6 +53,7 @@ export async function fetchPublicUnits(
     ...u,
     // numeric do Postgres pode chegar como string dependendo da configuração.
     area_m2: u.area_m2 === null ? null : Number(u.area_m2),
+    price: u.price === null || u.price === undefined ? null : Number(u.price),
   }));
 }
 

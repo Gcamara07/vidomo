@@ -15,6 +15,7 @@ import {
   toggleIn,
   type Filters,
 } from '@/lib/explore';
+import { BUILDING, searchFor, type NavState } from '@/lib/deep-link';
 import { EMPTY_FPS, addFpsSample, type FpsSummary } from '@/lib/fps-summary';
 import type { PublicUnit } from '@/lib/public-development';
 import { useElementSize, useMediaQuery } from '@/lib/use-layout';
@@ -51,6 +52,8 @@ export interface DevelopmentExplorerProps {
   /** GLB de detalhes (camada 2, opcional). */
   detailModelUrl?: string | null;
   initialUnits: PublicUnit[];
+  /** Estado inicial vindo do link (?u= / ?andar=), já validado no servidor. */
+  initialNav?: NavState;
   /** ?debug=1: mostra o contador de fps. */
   debug?: boolean;
 }
@@ -61,6 +64,7 @@ export function DevelopmentExplorer({
   modelUrl,
   detailModelUrl = null,
   initialUnits,
+  initialNav = BUILDING,
   debug = false,
 }: DevelopmentExplorerProps) {
   // O tempo real (supabase-js) só conecta depois que o prédio fica interativo, para não
@@ -73,9 +77,9 @@ export function DevelopmentExplorer({
   const { units, statusMap, connection } = useLiveUnitStatus(slug, initialUnits, liveEnabled);
 
   // Navegação: modo, andar ativo, unidade selecionada e filtros.
-  const [mode, setMode] = useState<ViewerMode>('building');
-  const [activeFloor, setActiveFloor] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [mode, setMode] = useState<ViewerMode>(initialNav.mode);
+  const [activeFloor, setActiveFloor] = useState<string | null>(initialNav.activeFloor);
+  const [selected, setSelected] = useState<string | null>(initialNav.selected);
   const [filters, setFilters] = useState<Filters>(() => defaultFilters(initialUnits));
 
   const [ready, setReady] = useState(false);
@@ -121,6 +125,19 @@ export function DevelopmentExplorer({
     setSelected((s) => (s && floorKeyOfUnit(s) !== key ? null : s));
   }, []);
   const goBuilding = useCallback(() => setMode('building'), []);
+
+  // A URL acompanha a navegação (sem recarregar): "Copiar link" copia a vista atual, e um
+  // link inválido some da barra de endereço ao cair no modo edifício.
+  useEffect(() => {
+    const search = searchFor(window.location.search, { mode, activeFloor, selected }, units);
+    if (search !== window.location.search) {
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${search}${window.location.hash}`,
+      );
+    }
+  }, [mode, activeFloor, selected, units]);
 
   const onToggleStatus = useCallback(
     (s: UnitStatus) => setFilters((f) => ({ ...f, statuses: toggleIn(f.statuses, s) })),
@@ -168,7 +185,12 @@ export function DevelopmentExplorer({
 
   const details =
     selectedUnit && selectedStatus ? (
-      <UnitDetails unit={selectedUnit} status={selectedStatus} onClose={() => setSelected(null)} />
+      <UnitDetails
+        unit={selectedUnit}
+        status={selectedStatus}
+        developmentName={name}
+        onClose={() => setSelected(null)}
+      />
     ) : null;
 
   return (

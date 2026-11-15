@@ -260,7 +260,7 @@ describe('comprador anônimo', () => {
     },
   );
 
-  it('lê o empreendimento publicado pela função pública, sem preço', async () => {
+  it('lê o empreendimento publicado pela função pública, só campos públicos', async () => {
     const { data, error } = await anon.rpc('public_development_units', { p_slug: SLUG_A });
     expect(error).toBeNull();
     expect(data).toHaveLength(40);
@@ -270,13 +270,21 @@ describe('comprador anônimo', () => {
           'area_m2',
           'bedrooms',
           'code',
+          'facade',
           'floor_number',
+          'frontage',
           'object_key',
+          'plan_image_path',
+          'price',
+          'price_kind',
           'status',
+          'suites',
           'tower_code',
           'unit_type_name',
         ].sort(),
       );
+      // Preço só resolvido pela regra do empreendimento; vendida nunca mostra (price.test.ts).
+      if (row.status === 'sold') expect(row.price).toBeNull();
     }
     const statuses = new Set((data as { status: string }[]).map((u) => u.status));
     expect(statuses).toEqual(

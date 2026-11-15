@@ -19,7 +19,13 @@ const unit = (floor: number, pos: number, status: PublicUnit['status']): PublicU
   unit_type_name: pos % 2 ? 'Tipo A' : 'Tipo B',
   area_m2: pos % 2 ? 58 : 75,
   bedrooms: pos % 2 ? 2 : 3,
+  suites: 1,
+  plan_image_path: null,
+  facade: null,
+  frontage: null,
   status,
+  price: null,
+  price_kind: null,
 });
 
 const units = [

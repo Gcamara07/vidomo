@@ -301,6 +301,10 @@
 
 /* ----------------------------------------------------- ficha (folha inferior) */
 .details {
+  /* Celular: a folha não passa de metade da tela; o resto da ficha rola. */
+  max-height: 52dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 14px 16px 16px;
   background: var(--color-papel);
   border-top: 1px solid var(--color-musgo);
@@ -333,6 +337,90 @@
 .unitTitle {
   margin: 0;
   font-size: 26px;
+}
+
+.detailsActions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.share {
+  min-height: 40px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-musgo);
+  background: transparent;
+  border: 1px solid var(--color-musgo);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.priceRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--color-musgo);
+  border-bottom: 1px solid var(--color-areia);
+}
+
+.price {
+  font-family: var(--font-title);
+  font-size: 22px;
+  color: var(--color-musgo);
+}
+
+.price small {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--color-cinza-quente);
+}
+
+.plan {
+  margin: 14px 0 0;
+}
+
+.plan img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--color-areia);
+  background: #fff;
+}
+
+.planPlaceholder {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 14px 12px;
+  border: 1px dashed var(--color-salvia);
+  background-color: var(--color-papel);
+  background-image:
+    linear-gradient(rgba(35, 56, 47, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(35, 56, 47, 0.06) 1px, transparent 1px);
+  background-size: 12px 12px;
+}
+
+.planSketch {
+  width: 120px;
+  fill: none;
+  stroke: var(--color-musgo);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 2;
+  opacity: 0.6;
+}
+
+.planPlaceholder figcaption {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-cinza-quente);
 }
 
 .close {
@@ -464,6 +552,8 @@
   }
 
   .details {
+    max-height: none;
+    overflow: visible;
     padding: 16px 0 0;
     border-top: 1px solid var(--color-musgo);
     box-shadow: none;

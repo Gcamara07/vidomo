@@ -49,24 +49,30 @@ describe('leitura anônima pela função pública', () => {
     ]);
   });
 
-  it('public_development_units devolve as 40 unidades, sem preço', async () => {
+  it('public_development_units devolve as 40 unidades, só campos públicos; vendida sem preço', async () => {
     const { data, error } = await anon.rpc('public_development_units', { p_slug: SLUG });
     expect(error).toBeNull();
     expect(data).toHaveLength(40);
     for (const row of data as Record<string, unknown>[]) {
-      expect(row).not.toHaveProperty('price');
       expect(Object.keys(row).sort()).toEqual(
         [
           'area_m2',
           'bedrooms',
           'code',
+          'facade',
           'floor_number',
+          'frontage',
           'object_key',
+          'plan_image_path',
+          'price',
+          'price_kind',
           'status',
+          'suites',
           'tower_code',
           'unit_type_name',
         ].sort(),
       );
+      if (row.status === 'sold') expect(row.price).toBeNull();
     }
   });
 

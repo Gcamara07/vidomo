@@ -107,12 +107,12 @@ begin
     values (v_org, v_dev, v_tower_code, d.tower_name)
     returning id into v_tower;
 
-    insert into public.unit_types (organization_id, development_id, name, area_m2, bedrooms)
-    values (v_org, v_dev, 'Tipo A', 58.00, 2)
+    insert into public.unit_types (organization_id, development_id, name, area_m2, bedrooms, suites)
+    values (v_org, v_dev, 'Tipo A', 58.00, 2, 1)
     returning id into v_type_a;
 
-    insert into public.unit_types (organization_id, development_id, name, area_m2, bedrooms)
-    values (v_org, v_dev, 'Tipo B', 75.00, 3)
+    insert into public.unit_types (organization_id, development_id, name, area_m2, bedrooms, suites)
+    values (v_org, v_dev, 'Tipo B', 75.00, 3, 1)
     returning id into v_type_b;
 
     for f in 1..v_floors loop
@@ -128,13 +128,16 @@ begin
 
         insert into public.units (
           organization_id, development_id, tower_id, floor_id, unit_type_id,
-          code, object_key, status, price
+          code, object_key, status, price, facade, frontage
         ) values (
           v_org, v_dev, v_tower, v_floor, v_type,
           v_code::text,
           format('%s__F%s__U%s', v_tower_code, lpad(f::text, 2, '0'), v_code),
           v_status,
-          (case when p % 2 = 1 then 420000 else 530000 end) + f * 8000
+          (case when p % 2 = 1 then 420000 else 530000 end) + f * 8000,
+          -- +Y do Blender = norte: posições 1 e 2 na face norte (frente, rua); 3 e 4 na sul (fundos).
+          case when p <= 2 then 'norte' else 'sul' end,
+          case when p <= 2 then 'frente' else 'fundos' end
         );
       end loop;
     end loop;

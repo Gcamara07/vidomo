@@ -34,7 +34,8 @@ export async function proxy(request: NextRequest) {
   if (!user && request.nextUrl.pathname.startsWith('/painel')) {
     const login = request.nextUrl.clone();
     login.pathname = '/login';
-    login.search = `?next=${encodeURIComponent(request.nextUrl.pathname)}`;
+    // Mantém a query (ex.: /painel/leads?lead=<id>, o link do e-mail de lead novo).
+    login.search = `?next=${encodeURIComponent(request.nextUrl.pathname + request.nextUrl.search)}`;
     return NextResponse.redirect(login);
   }
 

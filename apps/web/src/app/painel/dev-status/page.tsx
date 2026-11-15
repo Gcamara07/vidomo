@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { serverClient } from '@/lib/supabase/server';
-import { signOut } from '../../login/actions';
 import styles from '../painel.module.css';
 import { DevStatusTable, type DevStatusUnit } from './DevStatusTable';
 
@@ -67,11 +66,6 @@ export default async function DevStatusPage() {
             {user.email} · {orgs.length ? orgs.join(', ') : 'sem organização'}
           </p>
         </div>
-        <form action={signOut}>
-          <button type="submit" className={styles.secondary}>
-            Sair
-          </button>
-        </form>
       </header>
 
       {units.length === 0 ? (

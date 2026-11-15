@@ -749,6 +749,39 @@ describe('configuração e segredo do webhook', () => {
     expect(vault.error).not.toBeNull();
   });
 
+  it('"Enviar teste": só admin, só com webhook ativo, e enfileira uma entrega test', async () => {
+    await setWebhook(null, false);
+    const inactive = await adminA.rpc('enqueue_webhook_test', { p_organization_id: ORG_A });
+    expect(inactive.error?.message).toBe('webhook_inactive');
+
+    await setWebhook(TEST_HOOK, false);
+    const noSecret = await adminA.rpc('enqueue_webhook_test', { p_organization_id: ORG_A });
+    expect(noSecret.error?.message).toBe('webhook_inactive');
+
+    await setWebhook(TEST_HOOK, true);
+    const bySales = await salesA.rpc('enqueue_webhook_test', { p_organization_id: ORG_A });
+    expect(bySales.error?.code).toBe('42501');
+    const cross = await adminB.rpc('enqueue_webhook_test', { p_organization_id: ORG_A });
+    expect(cross.error?.code).toBe('42501');
+
+    const ok = await adminA.rpc('enqueue_webhook_test', { p_organization_id: ORG_A });
+    expect(ok.error).toBeNull();
+    // O admin acompanha a entrega pelo painel (RLS de membros).
+    const { data } = await adminA
+      .from('notification_deliveries')
+      .select('channel, event, target, status, lead_id')
+      .eq('id', ok.data as string)
+      .single();
+    expect(data).toEqual({
+      channel: 'webhook',
+      event: 'test',
+      target: TEST_HOOK,
+      status: 'pending',
+      lead_id: null,
+    });
+    await setWebhook(null, false);
+  });
+
   it('textos de consentimento são imutáveis', async () => {
     const upd = await service
       .from('consent_texts')

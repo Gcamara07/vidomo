@@ -1,6 +1,6 @@
 /**
  * Leitura pública de um empreendimento (regra 4): só pelas funções
- * public_development / public_development_units. Sem preço nesta fatia.
+ * public_development / public_development_units / public_contact.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { UNIT_STATUSES, type UnitStatus, type UnitStatusMap } from '@vidomo/viewer/types';
@@ -41,6 +41,27 @@ export async function fetchPublicDevelopment(
   const { data, error } = await client.rpc('public_development', { p_slug: slug });
   if (error) throw new Error(`public_development: ${error.message}`);
   return (data as PublicDevelopment[])[0] ?? null;
+}
+
+/** Contato comercial e texto de consentimento atual (public_contact). */
+export interface PublicContact {
+  organization_name: string;
+  /** Só dígitos, com DDI (5516…); null = sem botão de WhatsApp. */
+  whatsapp_number: string | null;
+  /** null = página padrão /privacidade. */
+  privacy_policy_url: string | null;
+  consent_version: string;
+  /** Texto já com o nome da incorporadora. */
+  consent_text: string;
+}
+
+export async function fetchPublicContact(
+  client: SupabaseClient,
+  slug: string,
+): Promise<PublicContact | null> {
+  const { data, error } = await client.rpc('public_contact', { p_slug: slug });
+  if (error) throw new Error(`public_contact: ${error.message}`);
+  return (data as PublicContact[])[0] ?? null;
 }
 
 export async function fetchPublicUnits(

@@ -467,6 +467,201 @@
   font-family: var(--font-mono);
 }
 
+/* ------------------------------------------------- contato e formulário de interesse */
+.contactActions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.primaryAction,
+.secondaryAction,
+.whatsapp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 15px;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.primaryAction {
+  color: var(--color-papel);
+  background: var(--color-musgo);
+  border: 1px solid var(--color-musgo);
+}
+
+.primaryAction:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.secondaryAction,
+.whatsapp {
+  color: var(--color-musgo);
+  background: transparent;
+  border: 1px solid var(--color-musgo);
+}
+
+.whatsapp[aria-disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.primaryAction:focus-visible,
+.secondaryAction:focus-visible,
+.whatsapp:focus-visible,
+.leadForm input:focus-visible,
+.leadForm textarea:focus-visible {
+  outline: 3px solid var(--color-latao);
+  outline-offset: 2px;
+}
+
+.formLoading {
+  margin: 14px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-cinza-quente);
+}
+
+.leadForm {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-musgo);
+}
+
+.formTitle {
+  margin: 0;
+  font-size: 19px;
+  outline: none;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 13px;
+  color: var(--color-nanquim);
+}
+
+.optional {
+  color: var(--color-cinza-quente);
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  /* 16 px: o iPhone não dá zoom ao focar. */
+  font: inherit;
+  font-size: 16px;
+  color: var(--color-nanquim);
+  background: #fffdf8;
+  border: 1px solid var(--color-salvia);
+  border-radius: 0;
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.field input[aria-invalid],
+.field textarea[aria-invalid],
+.consent input[aria-invalid] {
+  border-color: var(--color-erro);
+  outline: 1px solid var(--color-erro);
+}
+
+.fieldError,
+.formStatus {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-erro);
+}
+
+.formStatus:empty {
+  display: none;
+}
+
+.consent {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-nanquim);
+}
+
+.consent input {
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0;
+  accent-color: var(--color-musgo);
+}
+
+.consent a {
+  color: var(--color-musgo);
+}
+
+.formActions {
+  display: grid;
+  gap: 8px;
+}
+
+/* Armadilha: fora da tela (não display:none, que alguns robôs reconhecem). */
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.sent {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--color-musgo);
+}
+
+.sent p {
+  margin: 0;
+  font-size: 15px;
+}
+
+.sent .sentTitle {
+  font-family: var(--font-title);
+  font-size: 20px;
+  color: var(--color-musgo);
+}
+
+.sent .secondaryAction {
+  margin-top: 8px;
+}
+
+/* Digitando no formulário com a tela baixa (teclado aberto no celular): filtros e faixa de
+ * andares saem de cena para sobrar área ao 3D, que reenquadra o andar acima da folha. */
+@media (max-width: 899px) and (max-height: 600px) {
+  .root:has(.leadForm:focus-within) .filters,
+  .root:has(.leadForm:focus-within) .floorNav,
+  .root:has(.leadForm:focus-within) .disclaimerMobile {
+    display: none;
+  }
+}
+
 /* --------------------------------------------------------------- desktop */
 @media (min-width: 900px) {
   .stage {

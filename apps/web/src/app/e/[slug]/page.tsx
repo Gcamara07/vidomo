@@ -1,15 +1,26 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { preload } from 'react-dom';
 import { DevelopmentExplorer } from '@/components/public/DevelopmentExplorer';
 import { getAssetUrl } from '@/lib/assets';
 import { parseDeepLink } from '@/lib/deep-link';
-import { fetchPublicDevelopment, fetchPublicUnits } from '@/lib/public-development';
+import {
+  fetchPublicContact,
+  fetchPublicDevelopment,
+  fetchPublicUnits,
+} from '@/lib/public-development';
 import { publicServerClient } from '@/lib/supabase/public-server';
 
 // Status muda a todo momento: sempre renderiza com dados frescos.
 export const dynamic = 'force-dynamic';
+
+// Android: com o teclado aberto, a página encolhe em vez de ficar por baixo dele, então a
+// ficha (e o formulário de interesse) sobe junto e o campo em foco continua visível.
+export const viewport: Viewport = {
+  themeColor: '#23382F',
+  interactiveWidget: 'resizes-content',
+};
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -36,11 +47,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function DevelopmentPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
   const { debug, u, andar } = await searchParams;
-  const [development, units] = await Promise.all([
+  const [development, units, contact] = await Promise.all([
     getDevelopment(slug),
     fetchPublicUnits(publicServerClient(), slug),
+    fetchPublicContact(publicServerClient(), slug),
   ]);
   if (!development) notFound();
+  const initialNav = parseDeepLink({ u, andar }, units);
 
   const modelUrl = development.model_path ? getAssetUrl(development.model_path, 'models') : null;
   const detailModelUrl = development.detail_model_path
@@ -57,7 +70,10 @@ export default async function DevelopmentPage({ params, searchParams }: PageProp
       modelUrl={modelUrl}
       detailModelUrl={detailModelUrl}
       initialUnits={units}
-      initialNav={parseDeepLink({ u, andar }, units)}
+      initialNav={initialNav}
+      contact={contact}
+      // Origem do lead: aberta pelo link de uma unidade (?u=) ou navegando pelo portal.
+      leadSource={initialNav.selected ? 'unit_link' : 'portal'}
       debug={debug === '1'}
     />
   );

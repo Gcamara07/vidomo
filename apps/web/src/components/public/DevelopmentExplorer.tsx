@@ -17,7 +17,8 @@ import {
 } from '@/lib/explore';
 import { BUILDING, searchFor, type NavState } from '@/lib/deep-link';
 import { EMPTY_FPS, addFpsSample, type FpsSummary } from '@/lib/fps-summary';
-import type { PublicUnit } from '@/lib/public-development';
+import type { LeadSource } from '@/lib/lead-form';
+import type { PublicContact, PublicUnit } from '@/lib/public-development';
 import { useElementSize, useMediaQuery } from '@/lib/use-layout';
 import { useLiveUnitStatus, type LiveConnection } from '@/lib/use-live-unit-status';
 import { FilterBar } from './FilterBar';
@@ -54,6 +55,10 @@ export interface DevelopmentExplorerProps {
   initialUnits: PublicUnit[];
   /** Estado inicial vindo do link (?u= / ?andar=), já validado no servidor. */
   initialNav?: NavState;
+  /** Contato comercial e consentimento (null: sem formulário nem WhatsApp). */
+  contact?: PublicContact | null;
+  /** 'unit_link' quando a página foi aberta por ?u=; senão 'portal'. */
+  leadSource?: LeadSource;
   /** ?debug=1: mostra o contador de fps. */
   debug?: boolean;
 }
@@ -65,6 +70,8 @@ export function DevelopmentExplorer({
   detailModelUrl = null,
   initialUnits,
   initialNav = BUILDING,
+  contact = null,
+  leadSource = 'portal',
   debug = false,
 }: DevelopmentExplorerProps) {
   // O tempo real (supabase-js) só conecta depois que o prédio fica interativo, para não
@@ -190,9 +197,14 @@ export function DevelopmentExplorer({
   const details =
     selectedUnit && selectedStatus ? (
       <UnitDetails
+        // Trocar de unidade volta para a ficha (fecha um formulário aberto).
+        key={selectedUnit.object_key}
         unit={selectedUnit}
         status={selectedStatus}
+        slug={slug}
         developmentName={name}
+        contact={contact}
+        leadSource={leadSource}
         onClose={() => setSelected(null)}
       />
     ) : null;

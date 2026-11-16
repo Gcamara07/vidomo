@@ -163,3 +163,9 @@ insert into private.ingest_keys (key_hash, label) values (
   encode(extensions.digest('vidomo-dev-ingest-key-somente-local-0001', 'sha256'), 'hex'),
   'desenvolvimento local'
 );
+
+-- Envio de notificações no ambiente local: a Edge Function vista de dentro do banco (rede
+-- do Docker) e os links apontando para o Next em desenvolvimento.
+update private.notification_runtime
+set function_url = 'http://kong:8000/functions/v1/notifications',
+    site_url = 'http://localhost:3000';

@@ -74,6 +74,13 @@ async function leadRow(id: string) {
 const createdLeads: string[] = [];
 /** Entregas que já existiam antes dos testes: o resto é apagado no fim. */
 let deliveriesBefore = new Set<string>();
+/** Configuração da org A antes dos testes (o ambiente local de quem roda), restaurada no fim. */
+let settingsBefore: {
+  whatsapp_number: string | null;
+  notification_emails: string[];
+  webhook_url: string | null;
+  webhook_secret_set_at: string | null;
+} | null = null;
 const TEST_HOOK = 'https://n8n.exemplo.test/webhook/vidomo';
 
 /** Webhook da org A: URL e, se pedido, segredo gerado (webhook ativo = URL + segredo). */
@@ -115,6 +122,17 @@ beforeAll(async () => {
   unit802Id = u!.id;
 
   deliveriesBefore = new Set(await deliveryIds());
+  const before = await service
+    .from('organization_settings')
+    .select('whatsapp_number, notification_emails, webhook_url, webhook_secret_set_at')
+    .eq('organization_id', ORG_A)
+    .single();
+  if (before.error) throw before.error;
+  settingsBefore = before.data;
+  await service
+    .from('organization_settings')
+    .update({ whatsapp_number: '5516997694880', notification_emails: ['comercial@exemplo.test'] })
+    .eq('organization_id', ORG_A);
   await setWebhook(null, false);
 });
 
@@ -130,12 +148,15 @@ afterAll(async () => {
     const del = await service.from('notification_deliveries').delete().in('id', leftover);
     if (del.error) throw del.error;
   }
+  // Volta a configuração local de quem rodou os testes. O segredo do webhook, porém, foi
+  // trocado aqui (e o Vault não é legível): o webhook fica inativo até gerar outro no painel.
   const restore = await service
     .from('organization_settings')
     .update({
-      webhook_url: null,
+      whatsapp_number: settingsBefore?.whatsapp_number ?? '5516997694880',
+      notification_emails: settingsBefore?.notification_emails ?? ['comercial@exemplo.test'],
+      webhook_url: settingsBefore?.webhook_url ?? null,
       webhook_secret_set_at: null,
-      notification_emails: ['comercial@exemplo.test'],
     })
     .eq('organization_id', ORG_A);
   if (restore.error) throw restore.error;

@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     // Cada pacote tem seu vitest.config.ts; supabase/ guarda os testes de RLS
     // (rodam contra o Supabase local).
-    projects: ['apps/*', 'packages/*', 'scripts', 'supabase'],
+    projects: ['apps/*', 'packages/*', 'scripts', 'supabase', 'supabase/functions'],
     passWithNoTests: true,
   },
 });

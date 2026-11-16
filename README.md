@@ -110,7 +110,7 @@ pnpm model:upload scripts/out/residencial-vista-test.glb   # troca o modelo real
 ## 4. Testes
 
 ```bash
-pnpm test:unit  # sem banco: viewer, scripts, web
+pnpm test:unit  # sem banco: viewer, scripts, web, Edge Functions
 pnpm test:db    # isolamento multiempresa, acesso anônimo, preço por price_display, histórico e Realtime
 pnpm test       # tudo (precisa do Supabase local rodando)
 pnpm lint && pnpm typecheck
@@ -385,3 +385,141 @@ Fora desta fatia (com TODOs no código): leads, reservas com prazo (`reserve_uni
 quiosque, panoramas 360°, admin completo, subdomínios e tema por organização, regras finas
 de transição de status (PRD 6.1), "Tenho interesse", URLs assinadas para
 modelos de rascunho.
+
+## 9. Notificações de leads (e-mail e webhook)
+
+Cada lead novo entra numa fila (`notification_deliveries`) na mesma transação do lead:
+se o envio falhar, o lead já está gravado. Logo depois do COMMIT, o banco aciona a Edge
+Function `notifications` (pg_net, sem esperar resposta: o comprador não espera o envio); a
+função envia e devolve o resultado. O pg_cron aciona de novo a cada minuto para os reenvios.
+
+- **Tentativas**: agora, +1 min, +5 min, +30 min e +2 h; depois da 5ª falha a entrega fica
+  `failed`. O "Enviar teste" do painel faz uma tentativa só. Cada tentativa (status HTTP,
+  erro, duração, sem dado pessoal) fica em `notification_attempts`, legível pelos membros.
+  Na falha do webhook, os primeiros 500 caracteres do corpo da resposta também ficam
+  gravados (`response_body`, e o último em `notification_deliveries.last_response_body`),
+  sem tags HTML e com e-mails e números de 8+ dígitos mascarados. O painel mostra essa
+  resposta junto da falha. No Resend, só o nome do erro (a mensagem pode citar endereços).
+- **Destino lido na hora do envio**: lista de e-mails atual; webhook na URL ativa atual
+  (URL + segredo), assinado com o segredo atual. Webhook desativado ou lista vazia encerram
+  a entrega sem novas tentativas.
+- **Sem `RESEND_API_KEY`** a função não pega e-mails: eles esperam na fila sem gastar
+  tentativas e saem quando a chave for configurada.
+- **Segredos**: a chave do Resend só nas variáveis da Edge Function; o segredo do webhook
+  no Vault (sai só para a função, pela service_role); a chave que autoriza o banco a acionar
+  a função (`X-Vidomo-Dispatch-Key`) é gerada pela migration e também fica no Vault.
+
+### E-mail (Resend)
+
+Remetente `Vidomo <leads@notificacoes.vidomo.com.br>` (domínio verificado no Resend, região
+São Paulo), para os e-mails do `/painel/config`, com Reply-To no e-mail do lead quando houver.
+Traz unidade, nome, contato (telefone com link para o WhatsApp), mensagem, origem, horário e
+o botão "Abrir no painel" (`/painel/leads?lead=<id>`). Cada entrega usa uma chave de
+idempotência: um reenvio depois de timeout não duplica o e-mail.
+
+### Webhook
+
+`POST` para a URL do `/painel/config` (https; `http` só para o receptor local), JSON em
+UTF-8, sem seguir redirecionamentos, timeout de 10 s. Sucesso é qualquer 2xx.
+
+Cabeçalhos:
+
+| Cabeçalho            | Valor                                                    |
+| -------------------- | -------------------------------------------------------- |
+| `X-Vidomo-Signature` | `sha256=<HMAC-SHA256 em hex do corpo bruto>`             |
+| `X-Vidomo-Delivery`  | id da entrega (o mesmo em todos os reenvios: deduplique) |
+| `X-Vidomo-Event`     | `lead.created`, `lead.deleted` ou `test`                 |
+
+`lead.created`:
+
+```json
+{
+  "event": "lead.created",
+  "delivery_id": "6a9a8fae-…",
+  "sent_at": "2026-11-15T22:54:21.532Z",
+  "organization": { "id": "a0000000-…", "name": "Construtora Exemplo" },
+  "development": { "slug": "residencial-vista", "name": "Residencial Vista" },
+  "lead": {
+    "id": "83745e31-…",
+    "name": "Maria Souza",
+    "phone": "5516997694880",
+    "email": "maria@exemplo.com",
+    "message": "Quero visitar no sábado",
+    "source": "unit_link",
+    "status": "new",
+    "created_at": "2026-11-15T22:54:21.486Z",
+    "unit": {
+      "code": "802",
+      "floor": 8,
+      "type": "Tipo B",
+      "url": "https://www.vidomo.com.br/e/residencial-vista?u=802"
+    }
+  }
+}
+```
+
+- `phone`: só dígitos, com DDI (`55…`); `email`, `message` e `unit` podem ser `null`
+  (lead manual sem unidade, por exemplo).
+- `source`: `portal`, `unit_link`, `stand` ou `manual`. `status`: `new`, `in_progress`,
+  `won` ou `lost` (no envio).
+- `lead.deleted` (exclusão a pedido do titular, LGPD), só o id:
+  `{ "event": "lead.deleted", "delivery_id": "…", "sent_at": "…", "lead": { "id": "…" } }`.
+- `test`: o formato do `lead.created`, com `"event": "test"`, a organização real e lead e
+  empreendimento fictícios.
+
+**Conferir a assinatura no n8n.** A chave do HMAC é a string completa do segredo, com o
+prefixo (`whsec_` + 64 caracteres hex, usada como texto UTF-8; não tire o prefixo nem
+decodifique o hex). A mensagem são os bytes exatos do corpo recebido. O cabeçalho é
+`X-Vidomo-Signature: sha256=<hex minúsculo>`: compare com `'sha256=' + digest`, não só
+com o digest. No nó Webhook, ligue a opção de corpo bruto (Raw Body) e responda pelo nó
+"Respond to Webhook". Num nó Code (Run Once for All Items), logo depois do Webhook:
+
+```js
+const crypto = require('crypto');
+// Segredo do /painel/config: string completa, com whsec_ (de preferência numa credencial).
+const secret = 'whsec_…'.trim();
+const headers = $input.first().json.headers;
+// Bytes exatos recebidos (Raw Body). Não use $json.body nem binary.data.data.
+const raw = await this.helpers.getBinaryDataBuffer(0, 'data');
+const received = String(headers['x-vidomo-signature'] ?? '').trim();
+const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');
+const ok =
+  received.length === expected.length &&
+  crypto.timingSafeEqual(Buffer.from(received), Buffer.from(expected));
+const length = headers['content-length'];
+let motivo = null; // diagnóstico sem expor o segredo
+if (!ok) {
+  if (!received) motivo = 'sem cabeçalho X-Vidomo-Signature';
+  else if (!received.startsWith('sha256=')) motivo = 'cabeçalho sem o prefixo sha256=';
+  else if (length && raw.length !== Number(length))
+    motivo = `corpo bruto com ${raw.length} bytes; o pedido tinha ${length}`;
+  else motivo = 'assinatura diferente: confira se o segredo é o atual';
+}
+return [{ json: { ok, motivo, payload: ok ? JSON.parse(raw.toString('utf8')) : null } }];
+```
+
+Depois, um IF em `ok`: verdadeiro → 200 (e o resto do fluxo, deduplicando por
+`delivery_id`); falso → 401. Gerar um segredo novo no painel invalida o anterior na hora.
+
+### Local
+
+```bash
+pnpm exec supabase functions serve   # Edge Functions (deixe rodando)
+```
+
+- O `seed.sql` aponta a fila para a função local (`http://kong:8000/functions/v1/notifications`)
+  e os links para `http://localhost:3000`. Num banco já existente, sem reset:
+  `update private.notification_runtime set function_url = 'http://kong:8000/functions/v1/notifications', site_url = 'http://localhost:3000';`
+- E-mail local: `RESEND_API_KEY=re_…` em `supabase/functions/.env` (fora do git) e reinicie
+  o `functions serve` apontando para o arquivo:
+  `pnpm exec supabase functions serve --env-file supabase/functions/.env`. Sem a chave, os
+  e-mails só esperam na fila (a resposta da função traz `"email":"off"`).
+- **Armadilha no Windows:** o Bloco de Notas salva `.env` como `.env.txt` e o Explorer esconde
+  a extensão; a função sobe sem a chave e não avisa. Confira com `dir supabase\functions`
+  (ou ative "Extensões de nomes de arquivos" no Explorer) e renomeie para `.env`.
+- Receptor de teste no lugar do n8n: gere o segredo no `/painel/config`, salve a URL
+  `http://host.docker.internal:8787/vidomo` e rode
+  `VIDOMO_WEBHOOK_SECRET=whsec_… pnpm webhook:receive` (`--fail 500` para ver os reenvios).
+- `pnpm test:db` pausa o envio enquanto roda e restaura a configuração local no fim, mas
+  troca o segredo do webhook da org A (o Vault não é legível): depois dos testes o webhook
+  fica inativo até você gerar um segredo novo no painel.

@@ -33,25 +33,34 @@ select item from (
   -- Buckets
   select 'bucket | ' || id || ' | public=' || public from storage.buckets
   union all
+  -- Privilégios por has_*_privilege, não por information_schema: no remoto o CLI consulta
+  -- como supabase_read_only_user, e o information_schema esconde os grants de papéis dos
+  -- quais ele não é membro (anon, authenticated).
   -- anon não acessa tabela nenhuma
   select 'anon-table-privileges | public | '
-         || coalesce(string_agg(table_name || ':' || privilege_type, ',' order by table_name, privilege_type), 'nenhum')
-  from information_schema.role_table_grants
-  where grantee = 'anon' and table_schema = 'public'
+         || coalesce(string_agg(c.relname || ':' || pr.p, ',' order by c.relname, pr.p), 'nenhum')
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) pr(p)
+  where n.nspname = 'public' and c.relkind in ('r', 'v', 'm', 'p')
+    and has_table_privilege('anon', c.oid, pr.p)
   union all
   -- Schema private: nenhuma tabela acessível por anon/authenticated (leads: chaves, antispam)
   select 'private-table-privileges | anon,authenticated | '
-         || coalesce(string_agg(grantee || ':' || table_name || ':' || privilege_type, ','
-                                order by grantee, table_name, privilege_type), 'nenhum')
-  from information_schema.role_table_grants
-  where grantee in ('anon', 'authenticated') and table_schema = 'private'
+         || coalesce(string_agg(r.role || ':' || c.relname || ':' || pr.p, ','
+                                order by r.role, c.relname, pr.p), 'nenhum')
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  cross join unnest(array['anon', 'authenticated']) r(role)
+  cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) pr(p)
+  where n.nspname = 'private' and c.relkind in ('r', 'v', 'm', 'p')
+    and has_table_privilege(r.role, c.oid, pr.p)
   union all
   -- Leads: colunas que o admin pode editar direto (o segredo fica no Vault)
   select 'column-privilege | organization_settings | authenticated update='
-         || coalesce(string_agg(column_name, ',' order by column_name), 'nenhuma')
-  from information_schema.column_privileges
-  where grantee = 'authenticated' and table_schema = 'public'
-    and table_name = 'organization_settings' and privilege_type = 'UPDATE'
+         || coalesce(string_agg(a.attname, ',' order by a.attname), 'nenhuma')
+  from pg_attribute a
+  where a.attrelid = 'public.organization_settings'::regclass and a.attnum > 0
+    and not a.attisdropped
+    and has_column_privilege('authenticated', a.attrelid, a.attnum, 'UPDATE')
   union all
   -- units.status sem UPDATE para authenticated (regra 2)
   select 'column-privilege | units.status | authenticated update='

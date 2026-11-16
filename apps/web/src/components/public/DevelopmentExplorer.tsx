@@ -24,6 +24,10 @@ import { useLiveUnitStatus, type LiveConnection } from '@/lib/use-live-unit-stat
 import { FilterBar } from './FilterBar';
 import { FloorNav } from './FloorNav';
 import { FpsOverlay } from './FpsOverlay';
+// TODO(desempenho): carregar a ficha (UnitDetails, com interesse e WhatsApp) só quando uma
+// unidade for selecionada, via dynamic(). Hoje ela entra no JS inicial e acrescenta pedidos
+// antes do three.js; em HTTP/1.1 isso custa uma ida e volta (+0,13 s no build local; ver
+// README, "Medir a demo publicada"). Com ?u= a ficha passaria a abrir logo após o prédio.
 import { UnitDetails } from './UnitDetails';
 import { ViewerPlaceholder } from './ViewerPlaceholder';
 import styles from './explorer.module.css';

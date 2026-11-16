@@ -22,6 +22,7 @@ if (!url || !anonKey) {
 }
 
 const SLUG = 'residencial-vista';
+const ZERO = '00000000-0000-0000-0000-000000000000';
 const opts = { auth: { persistSession: false, autoRefreshToken: false } };
 const anon = createClient(url, anonKey, opts);
 const clients: SupabaseClient[] = [anon];
@@ -102,6 +103,13 @@ describe('anônimo sem acesso direto', () => {
     'organizations',
     'organization_members',
     'profiles',
+    'leads',
+    'notification_deliveries',
+    'notification_attempts',
+    'organization_settings',
+    'lead_deletions',
+    'unit_whatsapp_clicks',
+    'consent_texts',
   ])('não lê %s', async (table) => {
     const { data, error } = await anon.from(table).select('*').limit(1);
     expect(error).not.toBeNull();
@@ -116,6 +124,32 @@ describe('anônimo sem acesso direto', () => {
     });
     expect(error).not.toBeNull();
     expect(units).toHaveLength(40);
+  });
+
+  // Argumentos inofensivos: mesmo que a permissão falhasse, nada mudaria na fila.
+  it.each([
+    ['check_notifications_dispatch_key', { p_key: 'x' }],
+    [
+      'claim_notification_deliveries',
+      { p_channels: ['webhook'], p_limit: 1, p_delivery_ids: [ZERO] },
+    ],
+    ['complete_notification_delivery', { p_delivery_id: ZERO, p_attempt: 1, p_ok: false }],
+    ['set_notifications_paused', { p_paused: false }],
+  ])('não chama %s (API de envio)', async (fn, args) => {
+    const { error } = await anon.rpc(fn, args);
+    expect(error?.code).toBe('42501');
+  });
+});
+
+describe('Edge Function de notificações', () => {
+  it('está publicada e recusa chamada sem a chave de acionamento', async () => {
+    const res = await fetch(`${url}/functions/v1/notifications`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    await res.body?.cancel();
+    expect(res.status).toBe(401);
   });
 });
 

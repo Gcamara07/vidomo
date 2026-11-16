@@ -214,8 +214,10 @@ pnpm db:reset && pnpm model:upload   # volta ao modelo real
 
 |                     | Onde                                                                    |
 | ------------------- | ----------------------------------------------------------------------- |
-| Demo pública        | https://vidomo.vercel.app/e/residencial-vista (a raiz `/` redireciona)  |
-| Painel de status    | https://vidomo.vercel.app/painel/dev-status                             |
+| Demo pública        | https://www.vidomo.com.br/e/residencial-vista (a raiz `/` redireciona)  |
+| Painel              | https://www.vidomo.com.br/painel/leads (e `/painel/config`, admin)      |
+| Painel de status    | https://www.vidomo.com.br/painel/dev-status                             |
+| Domínio Vercel      | https://vidomo.vercel.app (mesmo deploy; `vidomo.com.br` → `www`)       |
 | Front (Vercel)      | projeto com root `apps/web`, funções em `iad1` (`apps/web/vercel.json`) |
 | Supabase            | projeto `vidomo`, ref. `msqdndtgpjoiipxwkwno`, região us-east-1         |
 | Referência da marca | `/dev/marca` (rota interna, `noindex`)                                  |
@@ -297,6 +299,40 @@ pnpm exec supabase db query --remote -f supabase/demo-seed.sql   # idempotente
 pnpm demo:admin --email voce@exemplo.com                          # senha mostrada uma vez
 ```
 
+### Leads e notificações
+
+Na ordem, depois do `db push` (migrations até `20261115000400`) e do `demo-seed.sql`:
+
+1. **Chave de ingestão** (o formulário de interesse grava leads pelo servidor do Next). Gere
+   no terminal, grave só o hash no banco e leve a chave para a Vercel como
+   `LEADS_INGEST_KEY` (ela não fica em arquivo):
+
+   ```bash
+   KEY=$(node -e "console.log('vidomo_ing_' + require('crypto').randomBytes(32).toString('hex'))")
+   HASH=$(node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" "$KEY")
+   pnpm exec supabase db query --remote "insert into private.ingest_keys (key_hash, label) values ('$HASH', 'vercel produção');"
+   echo "$KEY"   # copie para a Vercel e feche o terminal
+   ```
+
+   Para trocar: grave a nova, atualize a Vercel e depois
+   `update private.ingest_keys set revoked_at = now() where label = '<antiga>';`.
+
+2. **Fila → função**: o banco chama a Edge Function pela URL do projeto; os links dos
+   e-mails e do webhook usam `site_url` (padrão `https://www.vidomo.com.br`):
+
+   ```bash
+   pnpm exec supabase db query --remote "update private.notification_runtime set function_url = 'https://msqdndtgpjoiipxwkwno.supabase.co/functions/v1/notifications' where id;"
+   ```
+
+3. **Edge Function**: `pnpm exec supabase functions deploy notifications` (o
+   `verify_jwt = false` vem do `config.toml`; a função confere a própria chave de
+   acionamento, que a migration gera no Vault).
+4. **Chave do Resend**, só no remoto e só pelo CLI (nunca em arquivo nem na Vercel):
+   `pnpm exec supabase secrets set RESEND_API_KEY=re_…`. Sem ela, os e-mails esperam na
+   fila e saem quando a chave existir.
+5. **Webhook**: o segredo é por ambiente. No site publicado, gere um segredo novo em
+   `/painel/config`, cole no n8n e use "Enviar teste".
+
 ### Modelos 3D
 
 ```bash
@@ -314,8 +350,10 @@ O upload valida o GLB contra as unidades do remoto antes de enviar.
 pnpm test:remote
 ```
 
-Leitura anônima pela função pública, anônimo sem acesso às tabelas, GLBs públicos, cliente
-sem publicar no tópico e Broadcast chegando em até 3 s. O teste de Broadcast troca o status
+Leitura anônima pela função pública, anônimo sem acesso às tabelas (inclusive leads, fila
+de notificações e configuração), anônimo sem a API de envio, Edge Function publicada e
+recusando chamada sem a chave, GLBs públicos, cliente sem publicar no tópico e Broadcast
+chegando em até 3 s. O teste de Broadcast troca o status
 da unidade 1004 e o restaura (deixa 2 linhas no histórico, que é imutável); sem
 `SUPABASE_SERVICE_ROLE_KEY` ele é pulado. Os testes que criam e apagam dados ficam só no
 local (`pnpm test:db`).
@@ -326,7 +364,10 @@ local (`pnpm test:db`).
   framework Next.js, install/build padrão (pnpm pelo `pnpm-lock.yaml`), com "Include files
   outside the root directory" ligado (precisa do `packages/viewer`).
 - Variáveis (Production e Preview): `NEXT_PUBLIC_SUPABASE_URL` e
-  `NEXT_PUBLIC_SUPABASE_ANON_KEY` (chave **publishable**). **A secret não vai para a Vercel.**
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY` (chave **publishable**). Só em Production:
+  `LEADS_INGEST_KEY` (sem `NEXT_PUBLIC_`, fica no servidor; sem ela o formulário de
+  interesse responde erro e não grava). **A secret do Supabase e a chave do Resend não vão
+  para a Vercel.**
 - Região das funções: `iad1`, perto do banco em us-east-1 (`apps/web/vercel.json`).
 - Deploy: cada push no `main` gera um deploy de produção.
 - Supabase → Authentication → URL Configuration: Site URL `https://vidomo.vercel.app` e o
@@ -336,8 +377,21 @@ local (`pnpm test:db`).
 ### Medir a demo publicada
 
 ```bash
-pnpm measure --network fast4g --url https://vidomo.vercel.app/e/residencial-vista
+pnpm measure --network fast4g --runs 9 --url https://www.vidomo.com.br/e/residencial-vista
 ```
+
+**Bloco 2 (leads), novembro de 2026, 4G rápido, mediana de 9:** prédio interativo em
+**1,70 s** no site publicado (variação de 1,50 a 1,97 s entre execuções, por tempo de
+resposta e rede reais), detalhes em 2,16 s, 60 fps; com CPU 4× mais lenta, 2,42 s. Bem
+dentro da meta do PRD (até 5 s em 4G num aparelho de entrada).
+
+No build local (`next start`, porta 3100) o Bloco 2 mede 1,66 s contra 1,53 s da referência
+(`0b948ff`) medida no mesmo momento. A diferença vem do HTTP/1.1 local: a página passou a
+ter 15 pedidos antes do three.js (eram 12) e, com no máximo 6 conexões por domínio, o
+three.js espera uma ida e volta a mais na fila (~470 ms contra ~300 ms). No site publicado
+(HTTP/2, uma conexão) essa fila é de ~6 ms. Com CPU 4× mais lenta os dois builds locais
+empatam (2,09 s). JS inicial da página: 146,9 KB gzip (era 143,0 KB). Para comparar com as
+medições anteriores, use o build local; o publicado varia demais entre execuções.
 
 ## 8. Como funciona (resumo)
 
@@ -381,10 +435,11 @@ pnpm measure --network fast4g --url https://vidomo.vercel.app/e/residencial-vist
   6 s); as fontes pré-carregadas são só as da primeira tela.
 - **Arquivos 3D e plantas**: sempre via `getAssetUrl()` (buckets públicos `models` e `plans`).
 
-Fora desta fatia (com TODOs no código): leads, reservas com prazo (`reserve_unit`),
-quiosque, panoramas 360°, admin completo, subdomínios e tema por organização, regras finas
-de transição de status (PRD 6.1), "Tenho interesse", URLs assinadas para
-modelos de rascunho.
+Fora desta fatia (com TODOs no código): reservas com prazo (`reserve_unit`), distribuição
+automática de leads, WhatsApp automático para o vendedor, integrações com CRMs específicos
+(o webhook cobre via n8n), quiosque, panoramas 360°, admin completo, subdomínios e tema por
+organização, regras finas de transição de status (PRD 6.1) e URLs assinadas para modelos de
+rascunho.
 
 ## 9. Notificações de leads (e-mail e webhook)
 

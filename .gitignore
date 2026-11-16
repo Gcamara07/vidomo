@@ -11,6 +11,8 @@ next-env.d.ts
 .env
 .env.*
 !.env.example
+# chave de ingestão gerada para colar na Vercel (apague depois de copiar)
+.vercel-ingest-key
 
 # Supabase local
 supabase/.branches/

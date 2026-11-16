@@ -110,7 +110,7 @@ update public.units u
 
 -- Configuração comercial da demo (Bloco 2). Não sobrescreve o que o admin já mudou
 -- pelo /painel/config. A chave de ingestão NÃO fica aqui: o hash é gravado à parte
--- (ver README, "Leads: chave de ingestão").
+-- (ver README, "Leads e notificações").
 insert into public.organization_settings (organization_id, whatsapp_number, notification_emails)
 values ('a0000000-0000-4000-8000-0000000000a0', '5516997694880', array['gabriel@vidomo.com.br'])
 on conflict (organization_id) do nothing;

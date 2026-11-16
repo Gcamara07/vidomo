@@ -8,6 +8,12 @@
       "port": 3000
     },
     {
+      "name": "web-prod",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@vidomo/web", "exec", "next", "start", "-p", "3100"],
+      "port": 3100
+    },
+    {
       "name": "viewer-example",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@vidomo/viewer", "example"],

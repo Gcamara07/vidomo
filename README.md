@@ -333,6 +333,12 @@ Na ordem, depois do `db push` (migrations até `20261115000400`) e do `demo-seed
 5. **Webhook**: o segredo é por ambiente. No site publicado, gere um segredo novo em
    `/painel/config`, cole no n8n e use "Enviar teste".
 
+**Teste de ponta a ponta no site publicado (16/11/2026):** login no painel; "Enviar teste"
+entregue ao n8n Cloud (HTTP 200); um lead real pelo celular, aberto pelo link da unidade
+(`unit_link`, unidade 202), chegou ao painel em tempo real, por e-mail (Resend, caixa de
+entrada) e à planilha do n8n. As três entregas (teste, e-mail e webhook) saíram na
+primeira tentativa, com HTTP 200.
+
 ### Modelos 3D
 
 ```bash

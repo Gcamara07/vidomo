@@ -19,7 +19,7 @@ import {
   type ModelLayer,
 } from './lib/model-validation';
 import { developmentKeys, serviceClient } from './lib/supabase-env';
-import { classifyObjects, footprintOf } from './lib/zones';
+import { classifyObjects, zoneContextOf } from './lib/zones';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -53,7 +53,7 @@ async function main() {
   const report = compareModel(names, db, size, layer);
   // Torre × entorno (como o viewer classifica no modo andar).
   const baseDoc = layer === 'base' ? doc : await io.read(resolve(values.base!));
-  const zones = classifyObjects(doc, footprintOf(baseDoc));
+  const zones = classifyObjects(doc, zoneContextOf(baseDoc));
 
   if (values.json) {
     console.log(JSON.stringify({ file, slug: values.slug, ...report, zones }, null, 2));

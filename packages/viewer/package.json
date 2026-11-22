@@ -9,7 +9,9 @@
     "./naming": "./src/naming.ts",
     "./styles": "./src/styles.ts",
     "./types": "./src/types.ts",
-    "./site": "./src/site.ts"
+    "./site": "./src/site.ts",
+    "./floors": "./src/floors.ts",
+    "./towers": "./src/towers.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

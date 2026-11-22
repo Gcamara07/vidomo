@@ -15,6 +15,14 @@ export type UnitStatusMap = Record<string, UnitStatus>;
 
 export type Vec3 = [number, number, number];
 
+/**
+ * Modo do viewer:
+ * - building: o empreendimento inteiro (vista geral);
+ * - tower: um bloco enquadrado, os outros esmaecidos (só com 2+ torres no modelo);
+ * - floor: um andar, com recorte por altura em todas as torres.
+ */
+export type ViewerMode = 'building' | 'tower' | 'floor';
+
 export interface CameraPreset {
   position: Vec3;
   target: Vec3;

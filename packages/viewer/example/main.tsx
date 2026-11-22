@@ -2,12 +2,25 @@
  * Exemplo isolado do <Viewer> com status falsos (sem Supabase).
  *   pnpm --filter @vidomo/viewer example
  * Query string:
- *   ?model=<url>   GLB leve (padrão: /residencial-vista-leve.glb de scripts/out)
- *   ?detail=<url>  GLB de detalhes (padrão: /residencial-vista-detalhes.glb; ?detail=none desliga)
- * Controles: modo edifício/andar, seletor de andar, filtros de status e dormitórios
- * (esmaecem unidades), estado serializável (onViewChange).
+ *   ?demo=vista|flora  conjunto de teste (padrão: vista). flora = teste de vários blocos
+ *                      (20 blocos × 4 andares × 4 unidades; GLBs locais, fora do git:
+ *                      `pnpm model:compress modelos/teste-flora-leve.glb` e o de detalhes)
+ *   ?model=<url>       GLB leve (padrão: o do demo, servido de scripts/out)
+ *   ?detail=<url>      GLB de detalhes (padrão: o do demo; ?detail=none desliga)
+ *   ?tower=B09         abre no modo bloco (com 2+ torres)
+ *   ?floor=B09__F02    abre no modo andar (útil para medir fps com `pnpm measure --url`)
+ * Controles: vista geral / bloco / andar, seletor de bloco e de andar, rótulos dos blocos,
+ * filtros de status e dormitórios (esmaecem unidades), estado serializável (onViewChange).
  */
-import { StrictMode, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import {
+  StrictMode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
   BRAND,
@@ -25,23 +38,62 @@ import {
   type ViewerViewState,
 } from '../src';
 
-/** Como no seed: finais 1 e 3 = 2 dorms (Tipo A); 2 e 4 = 3 dorms (Tipo B). */
-const bedroomsOf = (key: string) => (Number(parseUnitKey(key)?.code.slice(-1)) % 2 === 1 ? 2 : 3);
-const FLOORS = Array.from({ length: 10 }, (_, i) => 10 - i);
-
-const params = new URLSearchParams(location.search);
-const manifest: ViewerManifest = {
-  modelUrl: params.get('model') ?? '/residencial-vista-leve.glb',
-  detailModelUrl:
-    params.get('detail') === 'none'
-      ? undefined
-      : (params.get('detail') ?? '/residencial-vista-detalhes.glb'),
+/** Conjuntos de teste: só dados (o viewer não sabe qual é qual). */
+interface Demo {
+  title: string;
+  model: string;
+  detail: string;
+  towers: string[];
+  floors: number;
+  perFloor: number;
+  bedroomsOf: (key: string) => number;
+}
+const DEMOS: Record<string, Demo> = {
+  vista: {
+    title: 'Residencial Vista',
+    model: '/residencial-vista-leve.glb',
+    detail: '/residencial-vista-detalhes.glb',
+    towers: ['TA'],
+    floors: 10,
+    perFloor: 4,
+    // Como no seed: finais 1 e 3 = 2 dorms (Tipo A); 2 e 4 = 3 dorms (Tipo B).
+    bedroomsOf: (key) => (Number(parseUnitKey(key)?.code.slice(-1)) % 2 === 1 ? 2 : 3),
+  },
+  flora: {
+    title: 'Teste Flora',
+    model: '/teste-flora-leve.glb',
+    detail: '/teste-flora-detalhes.glb',
+    towers: Array.from({ length: 20 }, (_, i) => `B${String(i + 1).padStart(2, '0')}`),
+    floors: 4,
+    perFloor: 4,
+    bedroomsOf: () => 2,
+  },
 };
 
-/** 40 unidades falsas: torre TA, 10 andares × 4. */
-const UNIT_KEYS = Array.from({ length: 10 }, (_, f) =>
-  [1, 2, 3, 4].map((p) => unitObjectKey('TA', f + 1, (f + 1) * 100 + p)),
-).flat();
+const params = new URLSearchParams(location.search);
+const demo = DEMOS[params.get('demo') ?? 'vista'] ?? DEMOS.vista!;
+const bedroomsOf = demo.bedroomsOf;
+const FLOORS = Array.from({ length: demo.floors }, (_, i) => demo.floors - i);
+const manifest: ViewerManifest = {
+  modelUrl: params.get('model') ?? demo.model,
+  detailModelUrl:
+    params.get('detail') === 'none' ? undefined : (params.get('detail') ?? demo.detail),
+};
+
+/** Unidades falsas: torres × andares × unidades por andar (código = andar·100 + posição). */
+const UNIT_KEYS = demo.towers.flatMap((t) =>
+  Array.from({ length: demo.floors }, (_, f) =>
+    Array.from({ length: demo.perFloor }, (_, p) => unitObjectKey(t, f + 1, (f + 1) * 100 + p + 1)),
+  ).flat(),
+);
+const BEDROOMS = [...new Set(UNIT_KEYS.map(bedroomsOf))].sort((a, b) => a - b);
+const MULTI = demo.towers.length > 1;
+const INITIAL_FLOOR = params.get('floor');
+const INITIAL_TOWER = params.get('tower');
+/** Rótulo curto na vista geral: dígitos do código ('B09' → '09'). */
+const TOWER_LABELS = Object.fromEntries(
+  demo.towers.map((t) => [t, { label: t.replace(/^\D+/, '') || t, title: `Bloco ${t}` }]),
+);
 
 function initialStatus(): UnitStatusMap {
   const cycle: UnitStatus[] = [
@@ -73,10 +125,26 @@ function App() {
   const [auto, setAuto] = useState(false);
   const [readyMs, setReadyMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<ViewerMode>('building');
-  const [activeFloor, setActiveFloor] = useState<string | null>(null);
+  const [mode, setMode] = useState<ViewerMode>(
+    INITIAL_FLOOR ? 'floor' : INITIAL_TOWER ? 'tower' : 'building',
+  );
+  const [activeTower, setActiveTower] = useState<string>(
+    INITIAL_FLOOR?.split('__')[0] ?? INITIAL_TOWER ?? demo.towers[0]!,
+  );
+  const [activeFloor, setActiveFloor] = useState<string | null>(INITIAL_FLOOR);
+  const [labels, setLabels] = useState(true);
+  // O painel de baixo cobre o 3D: o viewer enquadra na área livre acima dele.
+  const panelRef = useRef<HTMLElement>(null);
+  const [panelH, setPanelH] = useState(0);
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setPanelH(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [statusFilter, setStatusFilter] = useState<Set<UnitStatus>>(() => new Set(UNIT_STATUSES));
-  const [bedroomFilter, setBedroomFilter] = useState<Set<number>>(() => new Set([2, 3]));
+  const [bedroomFilter, setBedroomFilter] = useState<Set<number>>(() => new Set(BEDROOMS));
   const [view, setView] = useState<ViewerViewState | null>(null);
 
   const dimmedUnits = useMemo(
@@ -87,8 +155,20 @@ function App() {
     [status, statusFilter, bedroomFilter],
   );
   const goFloor = (key: string) => {
+    const tower = key.split('__')[0]!;
+    setActiveTower(tower);
     setActiveFloor(key);
     setMode('floor');
+  };
+  const goTower = (tower: string) => {
+    setActiveTower(tower);
+    setSelected(null);
+    // Uma torre só: não há modo bloco (o viewer também o pularia).
+    setMode(MULTI ? 'tower' : 'building');
+  };
+  const goOverview = () => {
+    setSelected(null);
+    setMode('building');
   };
   const toggle = <T,>(set: Set<T>, v: T) => {
     const next = new Set(set);
@@ -125,14 +205,23 @@ function App() {
         manifest={manifest}
         unitStatus={status}
         mode={mode}
+        activeTower={activeTower}
         activeFloor={activeFloor}
         dimmedUnits={dimmedUnits}
         selectedUnit={selected}
         onSelectUnit={setSelected}
         onSelectFloor={goFloor}
+        onSelectTower={goTower}
+        towerLabels={labels ? TOWER_LABELS : undefined}
         onViewChange={setView}
-        onReady={() => setReadyMs(Math.round(performance.now()))}
+        onReady={() => {
+          // Mesmas marcas da página pública: `pnpm measure --url <exemplo>` funciona aqui.
+          performance.mark('vidomo:viewer-ready');
+          setReadyMs(Math.round(performance.now()));
+        }}
+        onDetailReady={() => performance.mark('vidomo:detail-ready')}
         onError={(e) => setError(e.message)}
+        insets={{ top: 48, bottom: panelH + 12 }}
         style={{ position: 'absolute', inset: 0 }}
       />
 
@@ -157,7 +246,7 @@ function App() {
             color: BRAND.musgo,
           }}
         >
-          Residencial Vista <em>· viewer</em>
+          {demo.title} <em>· viewer</em>
         </h1>
         <span style={{ ...mono, fontSize: 11, color: '#6B6A63' }}>
           {error ? `erro: ${error}` : readyMs === null ? 'carregando…' : `pronto em ${readyMs} ms`}
@@ -165,6 +254,7 @@ function App() {
       </header>
 
       <section
+        ref={panelRef}
         style={{
           position: 'absolute',
           left: 12,
@@ -192,7 +282,7 @@ function App() {
               {STATUS_LABELS[s]} <span style={{ ...mono, color: '#6B6A63' }}>{counts[s]}</span>
             </button>
           ))}
-          {[2, 3].map((b) => (
+          {BEDROOMS.map((b) => (
             <button
               key={b}
               type="button"
@@ -205,16 +295,44 @@ function App() {
           ))}
         </div>
 
+        {MULTI && (
+          <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
+            <button
+              type="button"
+              onClick={goOverview}
+              style={{ ...floorBtn, ...(mode === 'building' ? floorBtnOn : {}) }}
+            >
+              Condomínio
+            </button>
+            {demo.towers.map((t) => {
+              const on = mode !== 'building' && activeTower === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => goTower(t)}
+                  style={{ ...floorBtn, ...(on ? floorBtnOn : {}) }}
+                >
+                  {TOWER_LABELS[t]!.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 4, overflowX: 'auto' }}>
           <button
             type="button"
-            onClick={() => setMode('building')}
-            style={{ ...floorBtn, ...(mode === 'building' ? floorBtnOn : {}) }}
+            onClick={() => (MULTI ? goTower(activeTower) : goOverview())}
+            style={{
+              ...floorBtn,
+              ...(mode === (MULTI ? 'tower' : 'building') ? floorBtnOn : {}),
+            }}
           >
-            Ver prédio
+            {MULTI ? `Bloco ${TOWER_LABELS[activeTower]!.label}` : 'Ver prédio'}
           </button>
           {FLOORS.map((n) => {
-            const key = floorObjectKey('TA', n);
+            const key = floorObjectKey(activeTower, n);
             const on = mode === 'floor' && activeFloor === key;
             return (
               <button
@@ -232,7 +350,7 @@ function App() {
         <div style={{ ...mono, fontSize: 12, minHeight: 18 }}>
           {selected && parts ? (
             <>
-              {selected} · andar {parts.floor} · unidade {parts.code} ·{' '}
+              {selected} · bloco {parts.tower} · andar {parts.floor} · unidade {parts.code} ·{' '}
               {STATUS_LABELS[status[selected]!]}
             </>
           ) : (
@@ -247,6 +365,11 @@ function App() {
           <button type="button" onClick={() => setAuto((a) => !a)} style={buttonStyle}>
             {auto ? 'Parar automático' : 'Automático (1,5 s)'}
           </button>
+          {MULTI && (
+            <button type="button" onClick={() => setLabels((l) => !l)} style={buttonStyle}>
+              {labels ? 'Sem rótulos' : 'Rótulos'}
+            </button>
+          )}
           <details style={{ ...mono, fontSize: 11 }}>
             <summary>estado</summary>
             <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(view)}</pre>

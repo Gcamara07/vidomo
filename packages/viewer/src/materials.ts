@@ -110,6 +110,15 @@ export const LOWER_FILL = '#E4DED3';
 /** Unidade fora dos filtros: sem cor de status, Areia claro, contorno suave. */
 export const FILTERED_FILL = '#ECE8E0';
 export const FILTERED_OUTLINE = '#B5AE9F';
+/** Silhueta dos blocos fora do corte no modo andar: Areia semitransparente. */
+export const GHOST_FILL = BRAND.areia;
+export const GHOST_OPACITY = 0.45;
+/**
+ * Ordem de desenho da silhueta: depois de tudo que é opaco. Primeiro só a profundidade
+ * (ghostDepth), depois a cor só na face mais próxima: a transparência não se acumula entre
+ * as camadas do bloco (unidades, lajes, fachada).
+ */
+export const GHOST_RENDER_ORDER = 10;
 
 export interface ViewerMaterials {
   status: Record<UnitStatus, MeshBasicMaterial>;
@@ -125,6 +134,10 @@ export interface ViewerMaterials {
   lowerClipped: MeshBasicMaterial;
   /** Unidades fora dos filtros (dimmedUnits). */
   filtered: MeshBasicMaterial;
+  /** Silhueta (modo andar, blocos fora do corte): passada só de profundidade. */
+  ghostDepth: MeshBasicMaterial;
+  /** Silhueta: passada de cor, semitransparente, só na face mais próxima. */
+  ghost: MeshBasicMaterial;
   planes: ClipPlanes;
   dispose(): void;
 }
@@ -149,6 +162,15 @@ export function createViewerMaterials(anisotropy = 4): ViewerMaterials {
   const lowerClipped = lowerMaterial(anisotropy);
   lowerClipped.clippingPlanes = [planes.below];
   const filtered = fillMaterial({ kind: 'solid', color: FILTERED_FILL }, anisotropy);
+  const ghostDepth = new MeshBasicMaterial({ colorWrite: false });
+  ghostDepth.name = 'vidomo_ghost_depth';
+  const ghost = new MeshBasicMaterial({
+    color: GHOST_FILL,
+    transparent: true,
+    opacity: GHOST_OPACITY,
+    depthWrite: false,
+  });
+  ghost.name = 'vidomo_ghost';
 
   const all: Material[] = [
     ...Object.values(status),
@@ -159,6 +181,8 @@ export function createViewerMaterials(anisotropy = 4): ViewerMaterials {
     lower,
     lowerClipped,
     filtered,
+    ghostDepth,
+    ghost,
   ];
   return {
     status,
@@ -169,6 +193,8 @@ export function createViewerMaterials(anisotropy = 4): ViewerMaterials {
     lower,
     lowerClipped,
     filtered,
+    ghostDepth,
+    ghost,
     planes,
     dispose() {
       for (const m of all) {

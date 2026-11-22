@@ -39,3 +39,9 @@ modelos/preview-*.png
 /*.txt
 *.pem
 *.key
+
+# Teste de vários blocos (teste-flora): modelo e imagens de terceiros, só para uso local.
+# Nada disso vai para o git, para o Supabase remoto nem para a Vercel.
+modelos/teste-flora*
+modelos/referencias-flora/
+supabase/seeds/local/

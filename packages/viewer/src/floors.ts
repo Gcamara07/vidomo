@@ -6,9 +6,9 @@
  * prédio, no último andar).
  */
 import { floorKeyOfUnit, parseFloorKey } from './naming';
-import type { Vec3 } from './types';
+import type { Vec3, ViewerMode } from './types';
 
-export type ViewerMode = 'building' | 'floor';
+export type { ViewerMode } from './types';
 
 export interface FloorLevel {
   /** object_key do andar (ex.: 'TA__F08'). */
@@ -59,10 +59,13 @@ export function computeFloorLevels(slabs: FloorSlabInput[], buildingTop: number)
 /**
  * Como uma peça aparece no modo atual.
  * - normal: como no modo edifício
+ * - context: outra torre no modo bloco — esmaecida, contorno suave, tocável (troca o bloco)
  * - lower: andar abaixo do ativo — esmaecida, sem contorno, sem toque
  * - hidden: andar acima do ativo — oculta, sem toque
+ * - ghost: bloco fora do corte no modo andar — desenhado inteiro, como silhueta do bloco
+ *   (malha única por bloco), sem toque
  */
-export type PartView = 'normal' | 'lower' | 'hidden';
+export type PartView = 'normal' | 'context' | 'lower' | 'hidden' | 'ghost';
 
 const EPS = 0.05;
 
@@ -72,7 +75,7 @@ export function floorPartView(
   mode: ViewerMode,
   active: FloorLevel | undefined,
 ): PartView {
-  if (mode === 'building' || !active || !partFloor) return 'normal';
+  if (mode !== 'floor' || !active || !partFloor) return 'normal';
   if (partFloor.key === active.key) return 'normal';
   // Compara por cota (vale também entre torres diferentes).
   if (partFloor.base > active.base + EPS) return 'hidden';
@@ -91,14 +94,15 @@ export function unitView(
 
 /**
  * Faixa de altura que fica "normal" para peças sem andar (núcleo, cobertura, camada de
- * detalhes): acima de `top` some; abaixo de `bottom` aparece esmaecida.
- * No modo edifício não há recorte (null).
+ * detalhes): acima de `top` some; abaixo de `bottom` aparece esmaecida. Vale para todas as
+ * torres ao mesmo tempo (os blocos vizinhos não tapam a laje do andar ativo).
+ * Nos modos edifício e bloco não há recorte (null).
  */
 export function clipRange(
   mode: ViewerMode,
   active: FloorLevel | undefined,
 ): { bottom: number; top: number } | null {
-  if (mode === 'building' || !active) return null;
+  if (mode !== 'floor' || !active) return null;
   // Pequena folga: a laje de cima (e varandas apoiadas nela) já fica fora.
   return { bottom: active.base - 0.02, top: active.top - 0.02 };
 }

@@ -6,11 +6,13 @@
  * então "Copiar link" sempre copia a vista atual. Outros parâmetros (ex.: debug) ficam.
  * TODO(várias torres): aceitar ?u=TA-802 quando houver mais de uma torre.
  */
+import type { ViewerMode } from '@vidomo/viewer/types';
 import { floorKeyOf } from './explore';
 import type { PublicUnit } from './public-development';
 
 export interface NavState {
-  mode: 'building' | 'floor';
+  /** 'tower' (modo bloco) entra na página na etapa 3 do Bloco M. */
+  mode: ViewerMode;
   /** object_key do andar (ex.: 'TA__F08'). */
   activeFloor: string | null;
   /** object_key da unidade selecionada. */

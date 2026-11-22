@@ -18,6 +18,22 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@vidomo/viewer", "example"],
       "port": 5174
+    },
+    {
+      "name": "viewer-example-prod",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@vidomo/viewer",
+        "exec",
+        "vite",
+        "preview",
+        "--config",
+        "example/vite.config.ts",
+        "--outDir",
+        "../dist-example"
+      ],
+      "port": 5174
     }
   ]
 }

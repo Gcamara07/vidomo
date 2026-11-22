@@ -6,13 +6,20 @@
 export {
   Viewer,
   preloadModel,
-  type ViewerMode,
+  type TowerLabel,
   type ViewerProps,
   type ViewerStats,
   type ViewerViewState,
 } from './Viewer';
 export { computeFloorLevels, type FloorLevel } from './floors';
-export { classifyZone, towerFootprint, type Footprint, type PartZone } from './site';
+export {
+  classifyZone,
+  towerFootprint,
+  type Footprint,
+  type PartZone,
+  type ZoneOptions,
+} from './site';
+export { computeTowers, towerKeyOf, type TowerInfo } from './towers';
 export {
   UNIT_STATUSES,
   type CameraPreset,
@@ -20,6 +27,7 @@ export {
   type UnitStatusMap,
   type Vec3,
   type ViewerManifest,
+  type ViewerMode,
   type ViewInsets,
 } from './types';
 export {

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef } from 'react';
+import type { ViewerMode } from '@vidomo/viewer/types';
 import type { FloorEntry } from '@/lib/explore';
 import styles from './explorer.module.css';
 
@@ -16,7 +17,7 @@ export function FloorNav({
   onBuilding,
 }: {
   floors: FloorEntry[];
-  mode: 'building' | 'floor';
+  mode: ViewerMode;
   activeFloor: string | null;
   onFloor: (key: string) => void;
   onBuilding: () => void;

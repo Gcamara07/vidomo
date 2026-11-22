@@ -4,20 +4,28 @@
  * Não conhece Supabase nem o banco.
  *
  * Modos:
- *  - building: o prédio inteiro.
+ *  - building: o empreendimento inteiro (vista geral). Com vários blocos, tocar num bloco
+ *    sugere o modo bloco (onSelectTower) e cada bloco pode ter um rótulo curto.
+ *  - tower: o bloco ativo enquadrado; os outros esmaecidos, mas visíveis e tocáveis (troca
+ *    de bloco). Com uma torre só, este modo é pulado (vira building).
  *  - floor: o andar ativo em destaque, câmera oblíqua de cima; andares acima ocultos,
  *    abaixo esmaecidos (Areia translúcida, sem contorno). Estrutura e camada de detalhes são
  *    recortadas por altura (planos de corte pela cota das lajes FLOOR__), sem exigir nada
- *    do modelo.
+ *    do modelo. Com vários blocos, o recorte vale só para o bloco ativo e os colados a ele
+ *    (projeções em planta que se tocam); os outros blocos aparecem inteiros como silhueta
+ *    semitransparente (uma malha por bloco, sem cor de status, sem contorno, sem toque), que
+ *    não muda ao trocar de andar. Malhas de detalhe que juntam vários blocos são divididas
+ *    por bloco ao carregar (partition.ts).
  *
  * Desempenho: frameloop "demand" (só desenha quando algo muda), dpr limitado a 2,
  * MeshBasicMaterial sem luzes, sem sombras e sem pós-processamento. Trocar de andar só
  * muda constantes dos planos de corte e referências de material (sem recompilar shaders).
  */
-import { Edges, OrbitControls, useGLTF } from '@react-three/drei';
+import { Edges, Html, OrbitControls, useGLTF } from '@react-three/drei';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import {
   Component,
+  Fragment,
   Suspense,
   memo,
   useCallback,
@@ -32,6 +40,8 @@ import {
 import {
   Box3,
   Mesh,
+  Vector3,
+  type BufferGeometry,
   type Intersection,
   type Material,
   type PerspectiveCamera,
@@ -48,24 +58,32 @@ import {
   transitionMs,
   type Framing,
 } from './camera';
-import {
-  clipRange,
-  computeFloorLevels,
-  floorPartView,
-  type FloorLevel,
-  type PartView,
-  type ViewerMode,
-} from './floors';
+import { clipRange, computeFloorLevels, type PartView } from './floors';
 import {
   FILTERED_OUTLINE,
+  GHOST_RENDER_ORDER,
   createViewerMaterials,
   setClipRange,
   toFlatMaterial,
   type ViewerMaterials,
 } from './materials';
-import { floorKeyOfUnit } from './naming';
+import { floorKeyOfUnit, parseUnitKey } from './naming';
+import { buildGhostGeometries, splitByTower, type TowerPiece } from './partition';
 import { extractBuilding, type ScenePart } from './scene-model';
-import { classifyZone, towerFootprint, type Footprint, type PartZone } from './site';
+import { classifyZone, type Footprint, type PartZone, type ZoneOptions } from './site';
+import {
+  computeAdjacency,
+  computeTowers,
+  cutTowers,
+  partView,
+  resolveView,
+  towerAtPoint,
+  towerKeyOf,
+  towerLabelPosition,
+  type Point2,
+  type ResolvedView,
+  type TowerInfo,
+} from './towers';
 import { BRAND, PAPER_BACKGROUND, unitAppearance } from './styles';
 import type {
   CameraPreset,
@@ -73,15 +91,18 @@ import type {
   UnitStatusMap,
   Vec3,
   ViewerManifest,
+  ViewerMode,
   ViewInsets,
 } from './types';
 
-export type { ViewerMode } from './floors';
+export type { ViewerMode } from './types';
 
 /** Estado do viewer, serializável (JSON): para guardar, compartilhar ou restaurar a vista. */
 export interface ViewerViewState {
   mode: ViewerMode;
-  /** object_key do andar ativo (ex.: 'TA__F08') ou null no modo edifício. */
+  /** Código da torre ativa (modo bloco ou andar com 2+ torres; ex.: 'B09'), ou null. */
+  activeTower: string | null;
+  /** object_key do andar ativo (ex.: 'TA__F08') ou null fora do modo andar. */
   activeFloor: string | null;
   selectedUnit: string | null;
   camera: CameraPreset;
@@ -92,6 +113,11 @@ export interface ViewerProps {
   unitStatus: UnitStatusMap;
   /** Modo (controlado pelo app). Padrão: 'building'. */
   mode?: ViewerMode;
+  /**
+   * Código da torre ativa no modo bloco (ex.: 'B09'). Inválido → modo edifício. No modo
+   * andar, a torre vem do andar.
+   */
+  activeTower?: string | null;
   /** object_key do andar ativo no modo andar (ex.: 'TA__F08'). Inválido → modo edifício. */
   activeFloor?: string | null;
   /** Unidades esmaecidas pelos filtros: sem cor de status, em Areia claro, ainda tocáveis. */
@@ -101,10 +127,20 @@ export interface ViewerProps {
   /** Toque numa unidade (object_key) ou fora delas (null). */
   onSelectUnit?: (objectKey: string | null) => void;
   /**
-   * Sugestão de andar: toque numa laje, ou numa unidade, no modo edifício. O app decide se
-   * entra no modo andar.
+   * Sugestão de andar: toque numa laje, ou numa unidade, no modo edifício (com uma torre só)
+   * ou no modo bloco (no bloco ativo). O app decide se entra no modo andar.
    */
   onSelectFloor?: (floorKey: string) => void;
+  /**
+   * Sugestão de bloco (só com 2+ torres): toque num bloco (unidade, laje, núcleo ou rótulo)
+   * na vista geral, ou num bloco esmaecido no modo bloco. O app decide se entra no modo bloco.
+   */
+  onSelectTower?: (towerKey: string) => void;
+  /**
+   * Rótulos curtos dos blocos na vista geral (só com 2+ torres), por código da torre:
+   * ex.: { B09: { label: '09', title: 'Bloco 09' } }. Sem rótulos, nada aparece.
+   */
+  towerLabels?: Record<string, TowerLabel>;
   /** Chamado quando a transição para um modo termina (a câmera chegou). */
   onModeChange?: (mode: ViewerMode) => void;
   /** Estado serializável ao fim de cada interação de câmera e de cada transição. */
@@ -133,6 +169,13 @@ export interface ViewerProps {
   // TODO(norte): seta de norte no viewer (o modelo usa −Z = norte, +Y do Blender).
 }
 
+export interface TowerLabel {
+  /** Texto curto no 3D (ex.: '09'). */
+  label: string;
+  /** Nome para leitores de tela e dica (ex.: 'Bloco 09'). Padrão: o próprio label. */
+  title?: string;
+}
+
 export interface ViewerStats {
   /** Quadros desenhados no último segundo (0 quando nada muda: frameloop sob demanda). */
   fps: number;
@@ -152,11 +195,14 @@ export function Viewer({
   manifest,
   unitStatus,
   mode = 'building',
+  activeTower = null,
   activeFloor = null,
   dimmedUnits = EMPTY_SET,
   selectedUnit = null,
   onSelectUnit,
   onSelectFloor,
+  onSelectTower,
+  towerLabels,
   onModeChange,
   onViewChange,
   initialCamera,
@@ -207,11 +253,14 @@ export function Viewer({
               manifest={manifest}
               unitStatus={unitStatus}
               mode={mode}
+              activeTower={activeTower}
               activeFloor={activeFloor}
               dimmedUnits={dimmedUnits}
               selectedUnit={selectedUnit}
               onSelectUnit={onSelectUnit}
               onSelectFloor={onSelectFloor}
+              onSelectTower={onSelectTower}
+              towerLabels={towerLabels}
               onModeChange={onModeChange}
               onViewChange={onViewChange}
               initialCamera={initialCamera}
@@ -239,11 +288,14 @@ interface BuildingProps {
   manifest: ViewerManifest;
   unitStatus: UnitStatusMap;
   mode: ViewerMode;
+  activeTower: string | null;
   activeFloor: string | null;
   dimmedUnits: ReadonlySet<string>;
   selectedUnit: string | null;
   onSelectUnit?: (objectKey: string | null) => void;
   onSelectFloor?: (floorKey: string) => void;
+  onSelectTower?: (towerKey: string) => void;
+  towerLabels?: Record<string, TowerLabel>;
   onModeChange?: (mode: ViewerMode) => void;
   onViewChange?: (state: ViewerViewState) => void;
   initialCamera?: CameraPreset;
@@ -264,15 +316,67 @@ function partBox(part: ScenePart): { min: Vec3; max: Vec3 } {
   return { min: b.min.toArray() as Vec3, max: b.max.toArray() as Vec3 };
 }
 
+/** Vértices da peça em planta (x, z), coordenadas de mundo (forma real de blocos girados). */
+function planPoints(part: ScenePart): Point2[] {
+  const pos = part.geometry.getAttribute('position');
+  if (!pos) return [];
+  const v = new Vector3();
+  const out: Point2[] = [];
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).applyMatrix4(part.matrix);
+    out.push([v.x, v.z]);
+  }
+  return out;
+}
+
+/** Torre × entorno e bloco de cada peça (compartilhado entre o modelo leve e os detalhes). */
+interface TowerContext {
+  footprints: Footprint[];
+  options: ZoneOptions;
+  /** Uma torre só: o código dela (ou null sem torre). Várias: undefined. */
+  single: string | null | undefined;
+  /** Bloco de um ponto em planta (só com várias torres). */
+  assign: (x: number, z: number) => string | null;
+}
+
+interface ZonedPiece extends TowerPiece {
+  zone: PartZone;
+}
+
+/**
+ * Classifica as peças (torre × entorno) e diz o bloco de cada uma: pelo nome, ou, com
+ * várias torres, pela posição em planta — malha única com vários blocos vira uma peça por
+ * bloco (splitByTower). O entorno não tem bloco.
+ */
+function zonedPieces(parts: ScenePart[], ctx: TowerContext): ZonedPiece[] {
+  const out: ZonedPiece[] = [];
+  for (const part of parts) {
+    const zone = classifyZone(partBox(part), ctx.footprints, ctx.options);
+    const named = towerKeyOf(part.kind, part.objectKey);
+    if (zone === 'site') out.push({ part, zone, tower: null });
+    else if (named) out.push({ part, zone, tower: named });
+    else if (ctx.single !== undefined) out.push({ part, zone, tower: ctx.single });
+    else for (const piece of splitByTower(part, ctx.assign)) out.push({ ...piece, zone });
+  }
+  return out;
+}
+
+/** Bloco fora do corte no modo andar: a peça some e a silhueta do bloco a substitui. */
+const isGhost = (cut: ReadonlySet<string> | null, tower: string | null) =>
+  !!cut && !cut.has(tower ?? '');
+
 function Building({
   manifest,
   unitStatus,
   mode,
+  activeTower,
   activeFloor,
   dimmedUnits,
   selectedUnit,
   onSelectUnit,
   onSelectFloor,
+  onSelectTower,
+  towerLabels,
   onModeChange,
   onViewChange,
   initialCamera,
@@ -308,15 +412,38 @@ function Building({
     return new Map(list.map((l) => [l.key, l]));
   }, [model]);
 
-  const requested = activeFloor ? levels.get(activeFloor) : undefined;
-  const effectiveMode: ViewerMode = mode === 'floor' && requested ? 'floor' : 'building';
+  // Torres (blocos) pelos nomes: enquadramento do modo bloco e projeção torre × entorno.
+  const towers = useMemo(
+    () =>
+      computeTowers(
+        [...model.units, ...model.floors, ...model.structure].map((p) => ({
+          kind: p.kind,
+          objectKey: p.objectKey,
+          box: partBox(p),
+          // Forma em planta só de lajes e núcleos (o resto usa a caixa).
+          points: p.kind === 'floor' || p.kind === 'tower' ? planPoints(p) : undefined,
+        })),
+      ),
+    [model],
+  );
+  const multiTower = towers.size > 1;
+  // Blocos colados (par do mesmo prédio), pela geometria.
+  const adjacency = useMemo(() => computeAdjacency(towers), [towers]);
+
+  // Modo efetivo: andar/torre inválidos (ou modo bloco com uma torre só) viram edifício.
   // Andar ativo só vale no modo andar (no modo edifício, trocar o andar não move a câmera).
-  const active = effectiveMode === 'floor' ? requested : undefined;
+  const view = useMemo(
+    () => resolveView(mode, activeTower, activeFloor, towers, levels),
+    [mode, activeTower, activeFloor, towers, levels],
+  );
+  const effectiveMode = view.mode;
+  const active = view.floor;
+  // Modo andar com vários blocos: só o ativo e os colados são recortados; os outros viram
+  // silhueta inteira (não muda ao trocar de andar). Uma torre só: null, como antes.
+  const cut = useMemo(() => cutTowers(view, adjacency), [view, adjacency]);
   useEffect(() => {
-    if (mode === 'floor' && activeFloor && !levels.has(activeFloor)) {
-      console.warn(`[viewer] andar "${activeFloor}" não existe no modelo; mostrando o prédio.`);
-    }
-  }, [mode, activeFloor, levels]);
+    if (view.warning) console.warn(`[viewer] ${view.warning}`);
+  }, [view.warning]);
 
   // Recorte por altura: só as constantes dos planos mudam.
   const range = useMemo(() => clipRange(effectiveMode, active), [effectiveMode, active]);
@@ -353,39 +480,73 @@ function Building({
   );
 
   // Eventos com os valores mais recentes (sem recriar handlers a cada render).
-  const latest = useRef({ effectiveMode, active, selectedUnit, onSelectUnit, onSelectFloor });
+  const latestValues = {
+    view,
+    multiTower,
+    selectedUnit,
+    onSelectUnit,
+    onSelectFloor,
+    onSelectTower,
+  };
+  const latest = useRef(latestValues);
   useLayoutEffect(() => {
-    latest.current = { effectiveMode, active, selectedUnit, onSelectUnit, onSelectFloor };
+    latest.current = latestValues;
   });
   const callbacks = useRef({ onModeChange, onViewChange });
   useLayoutEffect(() => {
     callbacks.current = { onModeChange, onViewChange };
   });
 
-  const onTapUnit = useCallback((key: string) => {
-    const { effectiveMode: m, onSelectUnit: su, onSelectFloor: sf } = latest.current;
-    su?.(key);
-    if (m === 'building') {
-      const fk = floorKeyOfUnit(key);
-      if (fk) sf?.(fk);
-    }
+  /**
+   * Toque num bloco que não é o ativo (vista geral com 2+ torres, ou bloco esmaecido no
+   * modo bloco): sugere o bloco. Devolve true se o toque foi tratado assim.
+   */
+  const suggestTower = useCallback((tower: string | null): boolean => {
+    const { view: v, multiTower: multi, onSelectTower: st } = latest.current;
+    if (!multi || !tower || v.mode === 'floor') return false;
+    if (v.mode === 'tower' && v.tower?.key === tower) return false;
+    st?.(tower);
+    return true;
   }, []);
-  const onTapFloor = useCallback((key: string) => {
-    if (latest.current.effectiveMode === 'building') latest.current.onSelectFloor?.(key);
-  }, []);
+  const onTapUnit = useCallback(
+    (key: string) => {
+      if (suggestTower(parseUnitKey(key)?.tower ?? null)) return;
+      const { view: v, onSelectUnit: su, onSelectFloor: sf } = latest.current;
+      su?.(key);
+      if (v.mode !== 'floor') {
+        const fk = floorKeyOfUnit(key);
+        if (fk) sf?.(fk);
+      }
+    },
+    [suggestTower],
+  );
+  const onTapFloor = useCallback(
+    (key: string) => {
+      if (suggestTower(towerKeyOf('floor', key))) return;
+      if (latest.current.view.mode !== 'floor') latest.current.onSelectFloor?.(key);
+    },
+    [suggestTower],
+  );
+  const onTapTower = useCallback(
+    (key: string) => {
+      suggestTower(key);
+    },
+    [suggestTower],
+  );
 
   const emitView = useCallback((camera: CameraPreset) => {
-    const { effectiveMode: m, active: a, selectedUnit: s } = latest.current;
+    const { view: v, selectedUnit: s } = latest.current;
     callbacks.current.onViewChange?.({
-      mode: m,
-      activeFloor: a?.key ?? null,
+      mode: v.mode,
+      activeTower: v.mode === 'building' ? null : (v.tower?.key ?? null),
+      activeFloor: v.floor?.key ?? null,
       selectedUnit: s,
       camera,
     });
   }, []);
   const onTransitionEnd = useCallback(
     (camera: CameraPreset) => {
-      callbacks.current.onModeChange?.(latest.current.effectiveMode);
+      callbacks.current.onModeChange?.(latest.current.view.mode);
       emitView(camera);
     },
     [emitView],
@@ -397,17 +558,42 @@ function Building({
   };
   const isFloorMode = effectiveMode === 'floor';
 
-  // Torre × entorno pela projeção no chão (TOWER__ + FLOOR__, margem de 2 m).
-  const footprint = useMemo(
-    () =>
-      towerFootprint(
-        [...model.structure.filter((p) => p.kind === 'tower'), ...model.floors].map(partBox),
-      ),
-    [model],
+  // Torre × entorno pela projeção no chão de cada torre (TOWER__ + FLOOR__, margem de 2 m).
+  const towerContext = useMemo<TowerContext>(() => {
+    const footprints = [...towers.values()].map((t) => t.footprint);
+    // Topo do primeiro andar: malha única que cruza vários blocos e sobe acima dele é torre.
+    const tops = [...levels.values()].map((l) => l.top);
+    const options: ZoneOptions = tops.length ? { spanMinTop: Math.min(...tops) } : {};
+    return {
+      footprints,
+      options,
+      single: towers.size > 1 ? undefined : (towers.keys().next().value ?? null),
+      assign: (x, z) => towerAtPoint([x, z], towers),
+    };
+  }, [towers, levels]);
+  const structure = useMemo(
+    () => zonedPieces(model.structure, towerContext),
+    [model, towerContext],
   );
-  const structureZones = useMemo(
-    () => model.structure.map((p) => classifyZone(partBox(p), footprint)),
-    [model, footprint],
+  // Silhueta de cada bloco (unidades, lajes, núcleo e estrutura dele): só com vários blocos.
+  const ghosts = useMemo(
+    () =>
+      multiTower
+        ? buildGhostGeometries([
+            ...[...model.units, ...model.floors].map((part) => ({
+              part,
+              tower: towerKeyOf(part.kind, part.objectKey),
+            })),
+            ...structure.filter((p) => p.zone === 'tower'),
+          ])
+        : null,
+    [multiTower, model, structure],
+  );
+  useEffect(
+    () => () => {
+      for (const g of ghosts?.values() ?? []) g.dispose();
+    },
+    [ghosts],
   );
 
   return (
@@ -415,8 +601,7 @@ function Building({
       <CameraRig
         bounds={bounds}
         manifest={manifest}
-        mode={effectiveMode}
-        active={active}
+        view={view}
         autoRotate={autoRotate}
         initialCamera={initialCamera}
         insets={insets}
@@ -432,15 +617,17 @@ function Building({
               url={manifest.detailModelUrl}
               manifest={manifest}
               materials={materials}
-              footprint={footprint}
+              towerContext={towerContext}
+              cut={cut}
               showLower={isFloorMode}
               onReady={onDetailReady}
             />
           </Suspense>
         </ErrorBoundary>
       )}
-      {model.structure.map((part, i) =>
-        structureZones[i] === 'site' ? (
+      {ghosts && <GhostLayer geometries={ghosts} cut={cut} materials={materials} />}
+      {structure.map(({ part, zone, tower }, i) =>
+        zone === 'site' ? (
           <SitePart key={`s${i}`} part={part} material={materials.site} blocking threshold={15} />
         ) : (
           <ClippedPart
@@ -449,9 +636,11 @@ function Building({
             material={materials.structure}
             materials={materials}
             showLower={isFloorMode}
+            ghost={isGhost(cut, tower)}
             blocking
             rangeRef={rangeRef}
             threshold={15}
+            onTap={part.kind === 'tower' && multiTower ? onTapTower : undefined}
           />
         ),
       )}
@@ -459,10 +648,11 @@ function Building({
         <FloorSlab
           key={`f${i}`}
           part={part}
-          view={floorPartView(
+          view={partView(
             part.objectKey ? levels.get(part.objectKey) : undefined,
-            effectiveMode,
-            active,
+            towerKeyOf('floor', part.objectKey),
+            view,
+            cut,
           )}
           interactive={!isFloorMode}
           materials={materials}
@@ -476,14 +666,120 @@ function Building({
           status={unitStatus[part.objectKey!]}
           selected={part.objectKey === selectedUnit}
           filtered={dimmedUnits.has(part.objectKey!)}
-          view={floorPartView(floorOf(part), effectiveMode, active)}
+          view={partView(floorOf(part), towerKeyOf('unit', part.objectKey), view, cut)}
           materials={materials}
           onTap={onTapUnit}
         />
       ))}
+      {multiTower && towerLabels && effectiveMode === 'building' && (
+        <TowerLabels
+          towers={towers}
+          adjacency={adjacency}
+          labels={towerLabels}
+          onTap={onTapTower}
+        />
+      )}
     </>
   );
 }
+
+/**
+ * Rótulos curtos dos blocos na vista geral (HTML sobre o canvas: não custam draw calls nem
+ * texturas). O rótulo também é um alvo de toque maior que o bloco no celular.
+ */
+const TowerLabels = memo(function TowerLabels({
+  towers,
+  adjacency,
+  labels,
+  onTap,
+}: {
+  towers: Map<string, TowerInfo>;
+  adjacency: Map<string, string[]>;
+  labels: Record<string, TowerLabel>;
+  onTap: (towerKey: string) => void;
+}) {
+  return (
+    <>
+      {[...towers.values()].map((t) => {
+        const l = labels[t.key];
+        if (!l) return null;
+        return (
+          <Html
+            key={t.key}
+            // Perto da ponta externa do bloco, longe do vizinho colado.
+            position={towerLabelPosition(
+              t,
+              (adjacency.get(t.key) ?? []).map((k) => towers.get(k)!),
+            )}
+            center
+            // Fica abaixo da interface do app (folha inferior, cabeçalho).
+            zIndexRange={[1, 0]}
+          >
+            <button
+              type="button"
+              title={l.title ?? l.label}
+              aria-label={l.title ?? l.label}
+              onClick={() => onTap(t.key)}
+              style={TOWER_LABEL_STYLE}
+            >
+              {l.label}
+            </button>
+          </Html>
+        );
+      })}
+    </>
+  );
+});
+
+/**
+ * Silhuetas dos blocos fora do corte (modo andar): uma malha por bloco, primeiro só a
+ * profundidade, depois a cor semitransparente só na face mais próxima. Sem cor de status,
+ * sem contorno, sem toque.
+ */
+const GhostLayer = memo(function GhostLayer({
+  geometries,
+  cut,
+  materials,
+}: {
+  geometries: Map<string, BufferGeometry>;
+  cut: ReadonlySet<string> | null;
+  materials: ViewerMaterials;
+}) {
+  if (!cut) return null;
+  return (
+    <>
+      {[...geometries]
+        .filter(([key]) => !cut.has(key))
+        .map(([key, geometry]) => (
+          <Fragment key={key}>
+            <mesh
+              geometry={geometry}
+              material={materials.ghostDepth}
+              renderOrder={GHOST_RENDER_ORDER}
+              raycast={noRaycast}
+            />
+            <mesh
+              geometry={geometry}
+              material={materials.ghost}
+              renderOrder={GHOST_RENDER_ORDER + 1}
+              raycast={noRaycast}
+            />
+          </Fragment>
+        ))}
+    </>
+  );
+});
+
+const TOWER_LABEL_STYLE: CSSProperties = {
+  font: '500 10px/1 "IBM Plex Mono", ui-monospace, monospace',
+  color: BRAND.musgo,
+  background: BRAND.papel,
+  border: `1px solid ${BRAND.musgo}`,
+  padding: '2px 3px',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+  userSelect: 'none',
+};
 
 /**
  * Camada 2: modelo de detalhes (fachada, varandas, entorno, áreas comuns). Só visual: não
@@ -499,14 +795,16 @@ function DetailLayer({
   url,
   manifest,
   materials,
-  footprint,
+  towerContext,
+  cut,
   showLower,
   onReady,
 }: {
   url: string;
   manifest: ViewerManifest;
   materials: ViewerMaterials;
-  footprint: Footprint | null;
+  towerContext: TowerContext;
+  cut: ReadonlySet<string> | null;
   showLower: boolean;
   onReady?: () => void;
 }) {
@@ -532,13 +830,26 @@ function DetailLayer({
     return () => cancelAnimationFrame(id);
   }, [model]);
 
+  // Malha única com vários blocos (ex.: VIS__ESQUADRIAS) vira uma peça por bloco: cada
+  // bloco é recortado ou vira silhueta sozinho.
   const parts = useMemo(
+    () => zonedPieces([...model.structure, ...model.floors], towerContext),
+    [model, towerContext],
+  );
+  const ghosts = useMemo(
     () =>
-      [...model.structure, ...model.floors].map((part) => ({
-        part,
-        zone: classifyZone(partBox(part), footprint),
-      })),
-    [model, footprint],
+      towerContext.single === undefined
+        ? buildGhostGeometries(parts.filter((p) => p.zone === 'tower'))
+        : null,
+    [parts, towerContext],
+  );
+  // As peças divididas compartilham os atributos da malha original (cache do GLB): não são
+  // descartadas aqui; as silhuetas são cópias próprias e são.
+  useEffect(
+    () => () => {
+      for (const g of ghosts?.values() ?? []) g.dispose();
+    },
+    [ghosts],
   );
 
   // Um material chapado por material do GLB e por zona: a torre usa os planos de corte da
@@ -568,7 +879,8 @@ function DetailLayer({
 
   return (
     <>
-      {parts.map(({ part, zone }, i) =>
+      {ghosts && <GhostLayer geometries={ghosts} cut={cut} materials={materials} />}
+      {parts.map(({ part, zone, tower }, i) =>
         zone === 'site' ? (
           <SitePart
             key={`d${i}`}
@@ -584,6 +896,7 @@ function DetailLayer({
             material={materialFor(part, zone)}
             materials={materials}
             showLower={showLower}
+            ghost={isGhost(cut, tower)}
             blocking={false}
             threshold={30}
           />
@@ -651,15 +964,21 @@ const ClippedPart = memo(function ClippedPart({
   blocking,
   rangeRef,
   threshold,
+  onTap,
+  ghost = false,
 }: {
   part: ScenePart;
   material: Material;
   materials: ViewerMaterials;
   showLower: boolean;
+  /** Bloco fora do corte (modo andar): some; a silhueta do bloco o substitui. */
+  ghost?: boolean;
   /** Estrutura tapa o toque nas unidades atrás dela; detalhes não. */
   blocking: boolean;
   rangeRef?: RangeRef;
   threshold: number;
+  /** Toque no núcleo TOWER__ (com 2+ torres): sugere o bloco. */
+  onTap?: (objectKey: string) => void;
 }) {
   const raycast = useMemo(
     () => (blocking && rangeRef ? makeClippedRaycast(rangeRef) : noRaycast),
@@ -673,8 +992,16 @@ const ClippedPart = memo(function ClippedPart({
         matrix={part.matrix}
         matrixAutoUpdate={false}
         material={material}
-        raycast={raycast}
-        onClick={blocking ? stop : undefined}
+        visible={!ghost}
+        raycast={ghost ? noRaycast : raycast}
+        onClick={
+          blocking
+            ? (e) => {
+                e.stopPropagation();
+                if (onTap && part.objectKey && e.delta <= TAP_TOLERANCE_PX) onTap(part.objectKey);
+              }
+            : undefined
+        }
       >
         <Edges
           color={BRAND.musgo}
@@ -684,7 +1011,7 @@ const ClippedPart = memo(function ClippedPart({
           {...({ clippingPlanes: edgePlanes } as object)}
         />
       </mesh>
-      {showLower && (
+      {showLower && !ghost && (
         <mesh
           geometry={part.geometry}
           matrix={part.matrix}
@@ -713,13 +1040,17 @@ const FloorSlab = memo(function FloorSlab({
 }) {
   if (view === 'hidden') return null;
   const lower = view === 'lower';
+  const context = view === 'context';
+  // Silhueta: continua montada (sem recriar contornos ao sair do modo andar), invisível.
+  const ghost = view === 'ghost';
   return (
     <mesh
       geometry={part.geometry}
       matrix={part.matrix}
       matrixAutoUpdate={false}
-      material={lower ? materials.lower : materials.slab}
-      raycast={lower ? noRaycast : undefined}
+      material={lower || context ? materials.lower : materials.slab}
+      visible={!ghost}
+      raycast={lower || ghost ? noRaycast : undefined}
       onClick={(e) => {
         e.stopPropagation();
         if (interactive && part.objectKey && e.delta <= TAP_TOLERANCE_PX) onTap(part.objectKey);
@@ -732,7 +1063,9 @@ const FloorSlab = memo(function FloorSlab({
         document.body.style.cursor = '';
       }}
     >
-      {!lower && <Edges color={BRAND.musgo} lineWidth={1} threshold={15} />}
+      {!lower && (
+        <Edges color={context ? FILTERED_OUTLINE : BRAND.musgo} lineWidth={1} threshold={15} />
+      )}
     </mesh>
   );
 });
@@ -772,7 +1105,33 @@ const UnitMesh = memo(function UnitMesh({
   }
 
   const selectable = status !== undefined;
-  const isSelected = selected && selectable;
+  if (view === 'context') {
+    // Outro bloco no modo bloco: silhueta clara, contorno suave; tocar troca o bloco.
+    return (
+      <mesh
+        geometry={part.geometry}
+        matrix={part.matrix}
+        matrixAutoUpdate={false}
+        material={materials.lower}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (part.objectKey && e.delta <= TAP_TOLERANCE_PX) onTap(part.objectKey);
+        }}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          document.body.style.cursor = 'pointer';
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = '';
+        }}
+      >
+        <Edges color={FILTERED_OUTLINE} lineWidth={1} threshold={15} />
+      </mesh>
+    );
+  }
+  // Silhueta: continua montada (sem recriar contornos ao sair do modo andar), invisível.
+  const ghost = view === 'ghost';
+  const isSelected = selected && selectable && !ghost;
   const isFiltered = filtered && !isSelected;
   const appearance = unitAppearance(status ?? 'unavailable', isSelected);
   const material = isSelected
@@ -788,6 +1147,8 @@ const UnitMesh = memo(function UnitMesh({
       matrixAutoUpdate={false}
       material={material}
       renderOrder={isSelected ? 1 : 0}
+      visible={!ghost}
+      raycast={ghost ? noRaycast : undefined}
       onClick={(e) => {
         e.stopPropagation();
         if (selectable && part.objectKey && e.delta <= TAP_TOLERANCE_PX) onTap(part.objectKey);
@@ -832,8 +1193,7 @@ interface Anim {
 function CameraRig({
   bounds,
   manifest,
-  mode,
-  active,
+  view,
   autoRotate,
   initialCamera,
   insets,
@@ -842,8 +1202,7 @@ function CameraRig({
 }: {
   bounds: { min: Vec3; max: Vec3 };
   manifest: ViewerManifest;
-  mode: ViewerMode;
-  active: FloorLevel | undefined;
+  view: ResolvedView;
   autoRotate: boolean;
   initialCamera?: CameraPreset;
   insets: string;
@@ -856,9 +1215,15 @@ function CameraRig({
   const anim = useRef<Anim | null>(null);
   const framing = useRef<Framing | null>(null);
   const appliedKey = useRef<string | null>(null);
-  // No modo andar, a área livre (insets) entra na chave: abrir/fechar a ficha reenquadra o
-  // andar. No modo edifício só o centro se ajusta (ViewOffset), sem desfazer o zoom.
-  const viewKey = mode === 'floor' ? `floor|${active?.key ?? ''}|${insets}` : 'building';
+  const { mode, floor: active, tower } = view;
+  // Nos modos andar e bloco, a área livre (insets) entra na chave: abrir/fechar a ficha
+  // reenquadra. No modo edifício só o centro se ajusta (ViewOffset), sem desfazer o zoom.
+  const viewKey =
+    mode === 'floor'
+      ? `floor|${active?.key ?? ''}|${insets}`
+      : mode === 'tower'
+        ? `tower|${tower?.key ?? ''}|${insets}`
+        : 'building';
 
   const framingFor = useCallback(
     (azimuth?: number, usePreset = false): Framing => {
@@ -874,6 +1239,9 @@ function CameraRig({
       if (mode === 'floor' && active) {
         return computeFloorFraming(active, fov, aspect, azimuth ?? 0.56);
       }
+      if (mode === 'tower' && tower) {
+        return computeFraming(tower.bounds, fov, aspect, undefined, azimuth);
+      }
       return computeFraming(
         bounds,
         fov,
@@ -882,7 +1250,7 @@ function CameraRig({
         azimuth,
       );
     },
-    [get, mode, active, bounds, manifest.cameras?.default, insets],
+    [get, mode, active, tower, bounds, manifest.cameras?.default, insets],
   );
 
   const currentCamera = useCallback((): CameraPreset => {

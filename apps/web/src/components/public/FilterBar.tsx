@@ -15,6 +15,7 @@ export function FilterBar({
   counts,
   matching,
   total,
+  scope = null,
   bedroomOptions,
   isDefault,
   onToggleStatus,
@@ -25,6 +26,8 @@ export function FilterBar({
   counts: Record<UnitStatus, number>;
   matching: number;
   total: number;
+  /** Contagens só de um bloco (ex.: "Bloco 09"); null = o empreendimento todo. */
+  scope?: string | null;
   bedroomOptions: number[];
   isDefault: boolean;
   onToggleStatus: (s: UnitStatus) => void;
@@ -63,6 +66,7 @@ export function FilterBar({
         ))}
         <span className={styles.matching} aria-live="polite">
           {matching} de {total}
+          {scope ? ` · ${scope}` : ''}
         </span>
         {!isDefault && (
           <button type="button" className={styles.clear} onClick={onClear}>

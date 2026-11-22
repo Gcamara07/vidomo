@@ -229,7 +229,14 @@ describe('lote para a Edge Function', () => {
         source: 'manual',
         status: 'new',
         created_at: expect.any(String),
-        unit: { code: '202', floor: 2, type: 'Tipo B' },
+        unit: {
+          code: '202',
+          link_code: '202',
+          tower: { code: 'TB', name: 'Torre B' },
+          floor: 2,
+          floor_label: null,
+          type: 'Tipo B',
+        },
       },
     };
     expect(byChannel.email).toEqual({

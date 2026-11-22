@@ -5,22 +5,15 @@ import {
   toStatusMap,
   type PublicUnit,
 } from './public-development';
+import { vistaUnit } from '@/test/units';
 
 const unit = (object_key: string, status: PublicUnit['status']): PublicUnit => ({
-  object_key,
-  code: object_key.slice(-3),
-  tower_code: 'TA',
-  floor_number: 1,
-  unit_type_name: 'Tipo A',
-  area_m2: 58.4,
-  bedrooms: 2,
-  suites: 1,
-  plan_image_path: null,
+  ...vistaUnit(1, 1, { object_key, code: object_key.slice(-3), area_m2: 58.4, status }),
   facade: null,
   frontage: null,
-  status,
   price: null,
   price_kind: null,
+  link_code: object_key.slice(-3),
 });
 
 describe('mapa de status', () => {

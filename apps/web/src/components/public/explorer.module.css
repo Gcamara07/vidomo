@@ -285,6 +285,33 @@
   background: var(--color-musgo);
 }
 
+/* Vários blocos: bloco aberto (o andar dele está ativo). */
+.floorBtn[data-open] {
+  background: var(--color-linho);
+  box-shadow: inset 0 -3px 0 var(--color-musgo);
+}
+
+/* Invólucro do seletor: sem min-width 0, a faixa rolável alargaria a grade do rodapé (e a
+ * ficha junto) até a largura de todos os botões. */
+.navWrap {
+  min-width: 0;
+}
+
+/* Celular: faixa de blocos e, embaixo, a de andares do bloco ativo. */
+.navLevels {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.navLevels .floorNav + .floorNav {
+  padding-bottom: 10px;
+}
+
+.navLevels .floorNav:first-child:not(:last-child) {
+  padding-bottom: 4px;
+}
+
 .floorNum {
   font-weight: 600;
 }
@@ -723,6 +750,15 @@
 
   .floorBtn {
     justify-content: flex-start;
+  }
+
+  /* Vários blocos: coluna um pouco mais larga; andares recuados sob o bloco aberto. */
+  .dock[data-many] {
+    width: 176px;
+  }
+
+  .floorBtn[data-sub] {
+    margin-left: 14px;
   }
 
   .disclaimerMobile {

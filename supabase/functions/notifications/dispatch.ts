@@ -12,7 +12,16 @@ export type DeliveryEvent = 'lead.created' | 'lead.deleted' | 'test';
 
 export interface JobUnit {
   code: string;
+  /**
+   * Código da unidade nos links (?u=): o próprio código, ou "B09-201" quando o código se
+   * repete entre blocos. Ausente em jobs de antes da migration 20261122000200.
+   */
+  link_code?: string;
+  /** Bloco (torre) da unidade. */
+  tower?: { code: string; name: string } | null;
   floor: number | null;
+  /** Rótulo do andar (ex.: "Térreo"); null = "<número>º andar". */
+  floor_label?: string | null;
   type: string | null;
 }
 
@@ -121,13 +130,15 @@ export function testData(siteUrl: string, now: Date) {
       name: 'Lead de teste',
       phone: '5511999999999',
       email: 'lead.teste@exemplo.com',
-      message: 'Mensagem de teste enviada pelo painel do Vidomo.',
+      message: 'Mensagem de teste enviada pelo painel da Vidomo.',
       source: 'portal',
       status: 'new',
       created_at: now.toISOString(),
       unit: {
         code: '101',
+        tower: { code: 'TA', name: 'Torre A' },
         floor: 1,
+        floor_label: null,
         type: 'Tipo A',
         url: unitUrl(siteUrl, 'empreendimento-teste', '101'),
       },
@@ -171,9 +182,11 @@ export function webhookPayload(job: Job, now: Date): Record<string, unknown> {
       unit: lead.unit
         ? {
             code: lead.unit.code,
+            tower: lead.unit.tower ?? null,
             floor: lead.unit.floor,
+            floor_label: lead.unit.floor_label ?? null,
             type: lead.unit.type,
-            url: unitUrl(job.site_url, development.slug, lead.unit.code),
+            url: unitUrl(job.site_url, development.slug, linkCode(lead.unit)),
           }
         : null,
     },
@@ -223,10 +236,21 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function unitLabel(unit: JobUnit | null): string {
+const linkCode = (unit: JobUnit) => unit.link_code ?? unit.code;
+
+/** "Térreo" ou "8º andar". */
+function floorText(unit: JobUnit): string | null {
+  if (unit.floor_label) return unit.floor_label;
+  return unit.floor !== null ? `${unit.floor}º andar` : null;
+}
+
+/** "201 · Bloco 09 · 2º andar · Tipo" (o bloco vem do cadastro: "Torre A" no Vista). */
+export function unitLabel(unit: JobUnit | null): string {
   if (!unit) return 'Sem unidade (interesse no empreendimento)';
   const parts = [unit.code];
-  if (unit.floor !== null) parts.push(`${unit.floor}º andar`);
+  if (unit.tower?.name) parts.push(unit.tower.name);
+  const floor = floorText(unit);
+  if (floor) parts.push(floor);
   if (unit.type) parts.push(unit.type);
   return parts.join(' · ');
 }
@@ -245,8 +269,13 @@ export function leadEmail(job: Job): EmailContent {
   if (!isFullLead(lead) || !development) throw new Error('lead.created sem dados do lead');
 
   const panelUrl = panelLeadUrl(job.site_url, lead.id);
-  const unitPageUrl = lead.unit ? unitUrl(job.site_url, development.slug, lead.unit.code) : null;
-  const subject = `Novo lead: ${lead.unit ? `${lead.unit.code} · ` : ''}${development.name}`;
+  const unitPageUrl = lead.unit
+    ? unitUrl(job.site_url, development.slug, linkCode(lead.unit))
+    : null;
+  const unitRef = lead.unit
+    ? [lead.unit.tower?.name, lead.unit.code].filter(Boolean).join(' · ')
+    : null;
+  const subject = `Novo lead: ${unitRef ? `${unitRef} · ` : ''}${development.name}`;
   const phone = formatPhone(lead.phone);
   const source = SOURCE_LABELS[lead.source] ?? lead.source;
   const received = formatDateTime(lead.created_at);
@@ -272,7 +301,7 @@ export function leadEmail(job: Job): EmailContent {
     '',
     `Abrir no painel: ${panelUrl}`,
     '',
-    `Você recebe este e-mail porque está na lista de notificações da ${job.organization.name} no Vidomo.`,
+    `Você recebe este e-mail porque está na lista de notificações da ${job.organization.name} na Vidomo.`,
   ].join('\n');
 
   const cell = (value: string, href: string | null) => {
@@ -300,7 +329,7 @@ export function leadEmail(job: Job): EmailContent {
 <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse">${htmlRows}</table>
 <p style="margin:24px 0 0"><a href="${escapeHtml(panelUrl)}" style="display:inline-block;background:#23382F;color:#F3EFE7;padding:12px 20px;text-decoration:none;font-size:15px">Abrir no painel</a></p>
 </td></tr>
-<tr><td style="padding:16px 24px;border-top:1px solid #E6DFD2;color:#6B6A63;font-size:12px">Você recebe este e-mail porque está na lista de notificações da ${escapeHtml(job.organization.name)} no Vidomo.</td></tr>
+<tr><td style="padding:16px 24px;border-top:1px solid #E6DFD2;color:#6B6A63;font-size:12px">Você recebe este e-mail porque está na lista de notificações da ${escapeHtml(job.organization.name)} na Vidomo.</td></tr>
 </table></td></tr></table></body></html>`;
 
   return { subject, html, text, replyTo: lead.email };

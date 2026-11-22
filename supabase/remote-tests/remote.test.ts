@@ -48,6 +48,7 @@ describe('leitura anônima pela função pública', () => {
         name: 'Residencial Vista',
         model_path: 'residencial-vista/residencial-vista-leve.glb',
         detail_model_path: 'residencial-vista/residencial-vista-detalhes.glb',
+        viewer_cameras: null,
       },
     ]);
   });

@@ -318,3 +318,23 @@ export function towerLabelPosition(
   const k = Math.max(reach - inset, 0);
   return [c[0] + dir[0] * k, y, c[1] + dir[1] * k];
 }
+
+/**
+ * Ângulo horizontal da câmera no modo bloco (convenção de camera.ts: 0 = olhando de +Z):
+ * do lado de fora, oposto aos blocos colados, girado `turn` rad para mostrar duas fachadas.
+ * Assim o bloco do par fica atrás do ativo, não na frente. Sem vizinho: undefined (mantém o
+ * ângulo atual da câmera, como numa torre só).
+ */
+export function outwardAzimuth(
+  t: TowerInfo,
+  neighbors: TowerInfo[],
+  turn = 0.6,
+): number | undefined {
+  if (neighbors.length === 0) return undefined;
+  const c = centerOf(t);
+  const m = neighbors.map(centerOf).reduce<Point2>((s, p) => [s[0] + p[0], s[1] + p[1]], [0, 0]);
+  const dx = c[0] - m[0] / neighbors.length;
+  const dz = c[1] - m[1] / neighbors.length;
+  if (Math.hypot(dx, dz) < 1e-6) return undefined;
+  return Math.atan2(dx, dz) + turn;
+}

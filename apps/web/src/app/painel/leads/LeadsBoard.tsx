@@ -37,7 +37,17 @@ export interface BoardUnit {
   id: string;
   developmentId: string;
   code: string;
+  /** Código nos links da página pública (?u=): "802" ou "B09-201". */
+  linkCode: string;
+  /** Bloco, só em empreendimento com vários blocos ("Bloco 09"); null com um só. */
+  towerName: string | null;
 }
+
+/** "201 · Bloco 09" (com um bloco só, "802"). */
+export const boardUnitLabel = (u: BoardUnit) =>
+  u.towerName ? `${u.code} · ${u.towerName}` : u.code;
+/** "201 do Bloco 09" (com um bloco só, "802"), para frases. */
+const boardUnitPhrase = (u: BoardUnit) => (u.towerName ? `${u.code} do ${u.towerName}` : u.code);
 export interface BoardMember {
   organizationId: string;
   userId: string;
@@ -159,8 +169,10 @@ export function LeadsBoard({
           setLeads((l) => upsertLead(l, lead));
           if (msg.eventType === 'INSERT') {
             flashLead(lead.id);
-            const unit = lead.unitId ? unitById.get(lead.unitId)?.code : null;
-            setAnnounce(`Novo lead: ${lead.name}${unit ? `, unidade ${unit}` : ''}.`);
+            const unit = lead.unitId ? unitById.get(lead.unitId) : undefined;
+            setAnnounce(
+              `Novo lead: ${lead.name}${unit ? `, unidade ${boardUnitPhrase(unit)}` : ''}.`,
+            );
           }
         })
         .subscribe((status) => {
@@ -200,7 +212,10 @@ export function LeadsBoard({
 
   function exportCsv() {
     const csv = leadsToCsv(visible, {
-      unitCode: (id) => (id ? (unitById.get(id)?.code ?? '') : ''),
+      unitCode: (id) => {
+        const u = id ? unitById.get(id) : undefined;
+        return u ? boardUnitLabel(u) : '';
+      },
       developmentName: (id) => devById.get(id)?.name ?? '',
       memberName,
     });
@@ -333,7 +348,7 @@ export function LeadsBoard({
               sellerName: me.name,
               organizationName: orgNames[lead.organizationId] ?? '',
               developmentName: dev?.name ?? '',
-              unitCode: unit?.code ?? null,
+              unitCode: unit ? boardUnitPhrase(unit) : null,
             });
             return (
               <li
@@ -357,11 +372,12 @@ export function LeadsBoard({
                 <p className={styles.leadMeta}>
                   {unit && dev ? (
                     <a
-                      href={`/e/${dev.slug}?u=${encodeURIComponent(unit.code)}`}
+                      href={`/e/${dev.slug}?u=${encodeURIComponent(unit.linkCode)}`}
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Unidade <span className={styles.mono}>{unit.code}</span> ↗
+                      Unidade <span className={styles.mono}>{unit.code}</span>
+                      {unit.towerName ? ` · ${unit.towerName}` : ''} ↗
                     </a>
                   ) : (
                     <span>Sem unidade</span>

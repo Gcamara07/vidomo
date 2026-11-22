@@ -1,7 +1,7 @@
 'use client';
 // Só tipos: o viewer (three.js) chega pelo dynamic() abaixo.
 import type { ViewerMode, ViewerStats } from '@vidomo/viewer';
-import { floorKeyOfUnit } from '@vidomo/viewer/naming';
+import { floorKeyOfUnit, parseFloorKey } from '@vidomo/viewer/naming';
 import type { UnitStatus, ViewerManifest, ViewInsets } from '@vidomo/viewer/types';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -13,12 +13,13 @@ import {
   isDefaultFilters,
   legendCounts,
   toggleIn,
+  towersFromUnits,
   type Filters,
 } from '@/lib/explore';
 import { BUILDING, searchFor, type NavState } from '@/lib/deep-link';
 import { EMPTY_FPS, addFpsSample, type FpsSummary } from '@/lib/fps-summary';
 import type { LeadSource } from '@/lib/lead-form';
-import type { PublicContact, PublicUnit } from '@/lib/public-development';
+import type { PublicContact, PublicDevelopment, PublicUnit } from '@/lib/public-development';
 import { useElementSize, useMediaQuery } from '@/lib/use-layout';
 import { useLiveUnitStatus, type LiveConnection } from '@/lib/use-live-unit-status';
 import { FilterBar } from './FilterBar';
@@ -56,6 +57,8 @@ export interface DevelopmentExplorerProps {
   modelUrl: string | null;
   /** GLB de detalhes (camada 2, opcional). */
   detailModelUrl?: string | null;
+  /** Câmeras do viewer cadastradas no empreendimento (ex.: vista inicial do condomínio). */
+  viewerCameras?: PublicDevelopment['viewer_cameras'];
   initialUnits: PublicUnit[];
   /** Estado inicial vindo do link (?u= / ?andar=), já validado no servidor. */
   initialNav?: NavState;
@@ -72,6 +75,7 @@ export function DevelopmentExplorer({
   name,
   modelUrl,
   detailModelUrl = null,
+  viewerCameras = null,
   initialUnits,
   initialNav = BUILDING,
   contact = null,
@@ -89,6 +93,7 @@ export function DevelopmentExplorer({
 
   // Navegação: modo, andar ativo, unidade selecionada e filtros.
   const [mode, setMode] = useState<ViewerMode>(initialNav.mode);
+  const [activeTower, setActiveTower] = useState<string | null>(initialNav.activeTower);
   const [activeFloor, setActiveFloor] = useState<string | null>(initialNav.activeFloor);
   const [selected, setSelected] = useState<string | null>(initialNav.selected);
   const [filters, setFilters] = useState<Filters>(() => defaultFilters(initialUnits));
@@ -102,20 +107,51 @@ export function DevelopmentExplorer({
   const [detailMs, setDetailMs] = useState<number | null>(null);
 
   const manifest = useMemo<ViewerManifest | null>(
-    () => (modelUrl ? { modelUrl, detailModelUrl: detailModelUrl ?? undefined } : null),
-    [modelUrl, detailModelUrl],
+    () =>
+      modelUrl
+        ? {
+            modelUrl,
+            detailModelUrl: detailModelUrl ?? undefined,
+            cameras: viewerCameras ?? undefined,
+          }
+        : null,
+    [modelUrl, detailModelUrl, viewerCameras],
   );
 
   // Derivados do mapa de status em tempo real.
-  const floors = useMemo(() => floorsFromUnits(units, statusMap), [units, statusMap]);
+  const towers = useMemo(() => towersFromUnits(units, statusMap), [units, statusMap]);
+  const manyTowers = towers.length > 1;
+  // Com vários blocos, o seletor mostra os andares do bloco ativo; com um só, todos.
+  const floors = useMemo(
+    () => floorsFromUnits(units, statusMap, manyTowers ? activeTower : null),
+    [units, statusMap, manyTowers, activeTower],
+  );
+  // Rótulos curtos dos blocos no 3D ("09"), do cadastro.
+  const towerLabels = useMemo(
+    () =>
+      manyTowers
+        ? Object.fromEntries(towers.map((t) => [t.key, { label: t.short, title: t.name }]))
+        : undefined,
+    [manyTowers, towers],
+  );
+  // Legenda e contagens: o condomínio inteiro, ou o bloco ativo.
+  const scopeUnits = useMemo(
+    () =>
+      manyTowers && mode !== 'building' && activeTower
+        ? units.filter((u) => u.tower_code === activeTower)
+        : units,
+    [units, manyTowers, mode, activeTower],
+  );
+  const scopeName =
+    manyTowers && mode !== 'building' ? towers.find((t) => t.key === activeTower)?.name : null;
   const bedroomOptions = useMemo(() => getBedroomOptions(units), [units]);
   const dimmed = useMemo(
     () => dimmedUnitKeys(units, statusMap, filters),
     [units, statusMap, filters],
   );
   const legend = useMemo(
-    () => legendCounts(units, statusMap, filters),
-    [units, statusMap, filters],
+    () => legendCounts(scopeUnits, statusMap, filters),
+    [scopeUnits, statusMap, filters],
   );
   const filtersDefault = useMemo(() => isDefaultFilters(filters, units), [filters, units]);
 
@@ -123,24 +159,36 @@ export function DevelopmentExplorer({
   const selectedUnit = selected ? unitsByKey.get(selected) : undefined;
   const selectedStatus = selected ? statusMap[selected] : undefined;
 
-  // Toque no 3D. No modo edifício, o viewer também sugere o andar da unidade
-  // (onSelectFloor): entra no andar e a ficha abre.
+  // Toque no 3D. No modo edifício (um bloco) ou no modo bloco, o viewer também sugere o
+  // andar da unidade (onSelectFloor): entra no andar e a ficha abre. Com vários blocos, o
+  // toque na vista geral sugere o bloco (onSelectTower).
   const onSelectUnit = useCallback((key: string | null) => setSelected(key), []);
   const onSelectFloor = useCallback((key: string) => {
+    setActiveTower(parseFloorKey(key)?.tower ?? null);
     setActiveFloor(key);
     setMode('floor');
   }, []);
   const goFloor = useCallback((key: string) => {
+    setActiveTower(parseFloorKey(key)?.tower ?? null);
     setActiveFloor(key);
     setMode('floor');
     setSelected((s) => (s && floorKeyOfUnit(s) !== key ? null : s));
+  }, []);
+  const goTower = useCallback((key: string) => {
+    setActiveTower(key);
+    setMode('tower');
+    setSelected(null);
   }, []);
   const goBuilding = useCallback(() => setMode('building'), []);
 
   // A URL acompanha a navegação (sem recarregar): "Copiar link" copia a vista atual, e um
   // link inválido some da barra de endereço ao cair no modo edifício.
   useEffect(() => {
-    const search = searchFor(window.location.search, { mode, activeFloor, selected }, units);
+    const search = searchFor(
+      window.location.search,
+      { mode, activeTower, activeFloor, selected },
+      units,
+    );
     if (search !== window.location.search) {
       window.history.replaceState(
         null,
@@ -148,7 +196,7 @@ export function DevelopmentExplorer({
         `${window.location.pathname}${search}${window.location.hash}`,
       );
     }
-  }, [mode, activeFloor, selected, units]);
+  }, [mode, activeTower, activeFloor, selected, units]);
 
   const onToggleStatus = useCallback(
     (s: UnitStatus) => setFilters((f) => ({ ...f, statuses: toggleIn(f.statuses, s) })),
@@ -204,6 +252,7 @@ export function DevelopmentExplorer({
         // Trocar de unidade volta para a ficha (fecha um formulário aberto).
         key={selectedUnit.object_key}
         unit={selectedUnit}
+        manyTowers={manyTowers}
         status={selectedStatus}
         slug={slug}
         developmentName={name}
@@ -222,11 +271,14 @@ export function DevelopmentExplorer({
             manifest={manifest}
             unitStatus={statusMap}
             mode={mode}
+            activeTower={activeTower}
             activeFloor={activeFloor}
             dimmedUnits={dimmed}
             selectedUnit={selected}
             onSelectUnit={onSelectUnit}
             onSelectFloor={onSelectFloor}
+            onSelectTower={goTower}
+            towerLabels={towerLabels}
             onViewChange={onViewSettled}
             insets={insets}
             onReady={onReady}
@@ -270,6 +322,7 @@ export function DevelopmentExplorer({
           counts={legend.byStatus}
           matching={legend.matching}
           total={legend.total}
+          scope={scopeName ?? null}
           bedroomOptions={bedroomOptions}
           isDefault={filtersDefault}
           onToggleStatus={onToggleStatus}
@@ -277,18 +330,30 @@ export function DevelopmentExplorer({
           onClear={onClearFilters}
         />
 
-        {isDesktop && (details ?? <p className={styles.hint}>Toque num andar ou numa unidade.</p>)}
+        {isDesktop &&
+          (details ?? (
+            <p className={styles.hint}>
+              {manyTowers && mode === 'building'
+                ? 'Toque num bloco para ver os andares dele.'
+                : 'Toque num andar ou numa unidade.'}
+            </p>
+          ))}
       </aside>
 
       {/* Celular: faixa de andares + folha inferior. Desktop: coluna de andares. */}
-      <div ref={dockRef} className={styles.dock}>
+      <div ref={dockRef} className={styles.dock} data-many={manyTowers || undefined}>
         <p className={`${styles.disclaimer} ${styles.disclaimerMobile}`}>Imagens ilustrativas</p>
         <FloorNav
+          towers={towers}
           floors={floors}
           mode={mode}
+          activeTower={activeTower}
           activeFloor={activeFloor}
+          columns={isDesktop}
+          compact={!isDesktop && !!details}
           onFloor={goFloor}
-          onBuilding={goBuilding}
+          onTower={goTower}
+          onOverview={goBuilding}
         />
         {!isDesktop && details}
       </div>

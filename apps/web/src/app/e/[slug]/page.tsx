@@ -26,9 +26,15 @@ interface PageProps {
   params: Promise<{ slug: string }>;
   /**
    * ?debug=1 mostra o contador de fps (medição no aparelho).
-   * ?u=802 abre o andar da unidade com a ficha; ?andar=8 abre o andar (link inválido → prédio).
+   * ?u=802 (ou ?u=B09-201) abre o andar da unidade com a ficha; ?andar=8 abre o andar;
+   * ?bloco=09 abre o bloco; ?bloco=09&andar=2, o andar dele (link inválido → vista geral).
    */
-  searchParams: Promise<{ debug?: string; u?: string | string[]; andar?: string | string[] }>;
+  searchParams: Promise<{
+    debug?: string;
+    u?: string | string[];
+    andar?: string | string[];
+    bloco?: string | string[];
+  }>;
 }
 
 const getDevelopment = cache((slug: string) => fetchPublicDevelopment(publicServerClient(), slug));
@@ -46,14 +52,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function DevelopmentPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
-  const { debug, u, andar } = await searchParams;
+  const { debug, u, andar, bloco } = await searchParams;
   const [development, units, contact] = await Promise.all([
     getDevelopment(slug),
     fetchPublicUnits(publicServerClient(), slug),
     fetchPublicContact(publicServerClient(), slug),
   ]);
   if (!development) notFound();
-  const initialNav = parseDeepLink({ u, andar }, units);
+  const initialNav = parseDeepLink({ u, andar, bloco }, units);
 
   const modelUrl = development.model_path ? getAssetUrl(development.model_path, 'models') : null;
   const detailModelUrl = development.detail_model_path
@@ -69,6 +75,7 @@ export default async function DevelopmentPage({ params, searchParams }: PageProp
       name={development.name}
       modelUrl={modelUrl}
       detailModelUrl={detailModelUrl}
+      viewerCameras={development.viewer_cameras}
       initialUnits={units}
       initialNav={initialNav}
       contact={contact}

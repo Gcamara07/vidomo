@@ -75,6 +75,7 @@ import {
   computeAdjacency,
   computeTowers,
   cutTowers,
+  outwardAzimuth,
   partView,
   resolveView,
   towerAtPoint,
@@ -441,6 +442,17 @@ function Building({
   // Modo andar com vários blocos: só o ativo e os colados são recortados; os outros viram
   // silhueta inteira (não muda ao trocar de andar). Uma torre só: null, como antes.
   const cut = useMemo(() => cutTowers(view, adjacency), [view, adjacency]);
+  // Modo bloco: câmera do lado de fora do par (o bloco colado não tapa o ativo).
+  const towerAzimuth = useMemo(
+    () =>
+      view.mode === 'tower' && view.tower
+        ? outwardAzimuth(
+            view.tower,
+            (adjacency.get(view.tower.key) ?? []).map((k) => towers.get(k)!),
+          )
+        : undefined,
+    [view, adjacency, towers],
+  );
   useEffect(() => {
     if (view.warning) console.warn(`[viewer] ${view.warning}`);
   }, [view.warning]);
@@ -602,6 +614,7 @@ function Building({
         bounds={bounds}
         manifest={manifest}
         view={view}
+        towerAzimuth={towerAzimuth}
         autoRotate={autoRotate}
         initialCamera={initialCamera}
         insets={insets}
@@ -1194,6 +1207,7 @@ function CameraRig({
   bounds,
   manifest,
   view,
+  towerAzimuth,
   autoRotate,
   initialCamera,
   insets,
@@ -1203,6 +1217,8 @@ function CameraRig({
   bounds: { min: Vec3; max: Vec3 };
   manifest: ViewerManifest;
   view: ResolvedView;
+  /** Modo bloco: ângulo horizontal fixo (lado de fora do par); sem valor, o atual. */
+  towerAzimuth?: number;
   autoRotate: boolean;
   initialCamera?: CameraPreset;
   insets: string;
@@ -1240,7 +1256,7 @@ function CameraRig({
         return computeFloorFraming(active, fov, aspect, azimuth ?? 0.56);
       }
       if (mode === 'tower' && tower) {
-        return computeFraming(tower.bounds, fov, aspect, undefined, azimuth);
+        return computeFraming(tower.bounds, fov, aspect, undefined, towerAzimuth ?? azimuth);
       }
       return computeFraming(
         bounds,
@@ -1250,7 +1266,7 @@ function CameraRig({
         azimuth,
       );
     },
-    [get, mode, active, tower, bounds, manifest.cameras?.default, insets],
+    [get, mode, active, tower, towerAzimuth, bounds, manifest.cameras?.default, insets],
   );
 
   const currentCamera = useCallback((): CameraPreset => {

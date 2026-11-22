@@ -15,6 +15,7 @@ import {
 } from '@/lib/lead-form';
 import type { PublicContact, PublicUnit } from '@/lib/public-development';
 import { positionText, priceText } from '@/lib/unit-format';
+import { floorText, unitPhrase } from '@/lib/unit-ref';
 import { StatusSwatch } from './StatusLegend';
 import styles from './explorer.module.css';
 
@@ -43,6 +44,7 @@ const area = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumF
  */
 export function UnitDetails({
   unit,
+  manyTowers = false,
   status,
   slug,
   developmentName,
@@ -51,6 +53,8 @@ export function UnitDetails({
   onClose,
 }: {
   unit: PublicUnit;
+  /** Empreendimento com vários blocos: o bloco entra nos textos ("201 do Bloco 09"). */
+  manyTowers?: boolean;
   /** Status ao vivo (pode ter mudado depois que a página carregou). */
   status: UnitStatus;
   slug: string;
@@ -62,6 +66,9 @@ export function UnitDetails({
   // O preço vem da última leitura; se o status mudou para vendida, some na hora.
   const price = priceText({ ...unit, status });
   const position = positionText(unit);
+  // "201 do Bloco 09"; com um bloco só, "802" (como sempre).
+  const phrase = unitPhrase(unit, manyTowers);
+  const ofTower = manyTowers ? ` do ${unit.tower_name}` : '';
   const [view, setView] = useState<View>('details');
   // Fixado ao abrir: se o status mudar com o formulário aberto, o pedido não muda de tipo.
   const [kind, setKind] = useState<InterestKind>('unit');
@@ -69,7 +76,7 @@ export function UnitDetails({
   const openForm = () => {
     const k = interestKind(status);
     setKind(k);
-    setInitialMessage(k === 'similar' ? similarInterestMessage(unit.code, status) : '');
+    setInitialMessage(k === 'similar' ? similarInterestMessage(phrase, status) : '');
     setView('form');
   };
   const interestRef = useRef<HTMLButtonElement>(null);
@@ -84,14 +91,16 @@ export function UnitDetails({
       <header className={styles.detailsHead}>
         <div>
           <p className={styles.eyebrow}>
-            Torre {unit.tower_code} · {unit.floor_number}º andar
+            {unit.tower_name} · {floorText(unit)}
           </p>
           <h2 id="unit-title" className={styles.unitTitle}>
             Unidade <span className={styles.mono}>{unit.code}</span>
           </h2>
         </div>
         <div className={styles.detailsActions}>
-          <ShareButton title={`${developmentName} · Unidade ${unit.code}`} />
+          <ShareButton
+            title={`${developmentName} · ${manyTowers ? `${unit.tower_name} · ` : ''}Unidade ${unit.code}`}
+          />
           <button
             type="button"
             className={styles.close}
@@ -108,6 +117,7 @@ export function UnitDetails({
           slug={slug}
           objectKey={unit.object_key}
           unitCode={unit.code}
+          towerName={manyTowers ? unit.tower_name : null}
           source={leadSource}
           contact={contact}
           kind={kind}
@@ -123,11 +133,13 @@ export function UnitDetails({
             {kind === 'similar' ? (
               <>
                 Recebemos seu pedido de opções parecidas com a unidade{' '}
-                <span className={styles.mono}>{unit.code}</span>.
+                <span className={styles.mono}>{unit.code}</span>
+                {ofTower}.
               </>
             ) : (
               <>
-                Recebemos seu interesse na unidade <span className={styles.mono}>{unit.code}</span>.
+                Recebemos seu interesse na unidade <span className={styles.mono}>{unit.code}</span>
+                {ofTower}.
               </>
             )}
           </p>
@@ -141,6 +153,7 @@ export function UnitDetails({
       {view === 'details' && (
         <UnitInfo
           unit={unit}
+          phrase={phrase}
           status={status}
           price={price}
           position={position}
@@ -158,6 +171,7 @@ export function UnitDetails({
 /** Corpo da ficha: status e preço, ações de contato, dados e planta. */
 function UnitInfo({
   unit,
+  phrase,
   status,
   price,
   position,
@@ -168,6 +182,7 @@ function UnitInfo({
   onInterest,
 }: {
   unit: PublicUnit;
+  phrase: string;
   status: UnitStatus;
   price: ReturnType<typeof priceText>;
   position: string | null;
@@ -194,6 +209,7 @@ function UnitInfo({
 
       <ContactActions
         unit={unit}
+        phrase={phrase}
         status={status}
         slug={slug}
         developmentName={developmentName}
@@ -242,6 +258,7 @@ function UnitInfo({
  */
 function ContactActions({
   unit,
+  phrase,
   status,
   slug,
   developmentName,
@@ -250,6 +267,7 @@ function ContactActions({
   onInterest,
 }: {
   unit: PublicUnit;
+  phrase: string;
   status: UnitStatus;
   slug: string;
   developmentName: string;
@@ -265,9 +283,9 @@ function ContactActions({
       ? whatsappHref(
           number,
           whatsappUnitMessage(
-            unit.code,
+            phrase,
             developmentName,
-            unitLink(origin, slug, unit.code),
+            unitLink(origin, slug, unit.link_code),
             status,
           ),
         )

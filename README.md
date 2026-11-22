@@ -4,7 +4,7 @@ Fatia vertical da Vidomo: um prédio 3D no celular cujas unidades mudam de cor e
 real quando o status muda no banco. Contexto, regras e marca em [CLAUDE.md](CLAUDE.md).
 
 ```
-apps/web          Next.js 16 (App Router): /e/[slug] (público, ?u=802 / ?andar=8), /login, /painel/dev-status
+apps/web          Next.js 16 (App Router): /e/[slug] (público, ?u= / ?andar= / ?bloco=), /login, /painel/dev-status
 packages/viewer   <Viewer> em React Three Fiber + drei (não conhece o banco) + exemplo isolado
 supabase/         migrations SQL, seed, testes de RLS/Realtime (Vitest)
 scripts/          gerar/validar/enviar o GLB de teste, medir a demo
@@ -426,7 +426,10 @@ medições anteriores, use o build local; o publicado varia demais entre execuç
     (no celular abre o compartilhar do sistema). TODO: seta de norte; "Tenho interesse"
     (Bloco 2).
   - Links: `?u=802` abre o andar com a unidade selecionada; `?andar=8` abre o andar
-    (com uma torre só). Inválido cai no prédio e a URL é limpa. A URL acompanha a
+    (com uma torre só). Com vários blocos: `?bloco=09` abre o bloco (aceita `09`, `B09`
+    ou `9`), `?bloco=09&andar=2` o andar dele e `?u=B09-201` a unidade (o código leva o
+    bloco só quando se repete entre blocos; senão continua `?u=802`). Inválido cai na
+    vista geral e a URL é limpa. A URL acompanha a
     navegação (`replaceState`, sem encher o histórico) e preserva outros parâmetros.
   - O viewer recebe as áreas cobertas pela ficha e pelo seletor (`insets`) e centraliza
     o prédio/andar na área livre, para a ficha não cobrir a unidade selecionada.
@@ -511,7 +514,9 @@ Cabeçalhos:
     "created_at": "2026-11-15T22:54:21.486Z",
     "unit": {
       "code": "802",
+      "tower": { "code": "TA", "name": "Torre A" },
       "floor": 8,
+      "floor_label": null,
       "type": "Tipo B",
       "url": "https://www.vidomo.com.br/e/residencial-vista?u=802"
     }
@@ -521,6 +526,9 @@ Cabeçalhos:
 
 - `phone`: só dígitos, com DDI (`55…`); `email`, `message` e `unit` podem ser `null`
   (lead manual sem unidade, por exemplo).
+- `unit.tower`: o bloco (torre) da unidade, como cadastrado. `unit.floor_label`: rótulo do
+  andar (ex.: `"Térreo"`) ou `null`. `unit.url`: com vários blocos, quando o código se
+  repete entre eles, o link leva o bloco (`?u=B09-201`).
 - `source`: `portal`, `unit_link`, `stand` ou `manual`. `status`: `new`, `in_progress`,
   `won` ou `lost` (no envio).
 - `lead.deleted` (exclusão a pedido do titular, LGPD), só o id:

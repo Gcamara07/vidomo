@@ -4,7 +4,7 @@ import { maskBrPhone, nationalDigits } from '@/lib/lead-form';
 import { panelErrorMessage, validateManualLead, type ManualLeadInput } from '@/lib/panel/leads';
 import { browserClient } from '@/lib/supabase/browser';
 import styles from '../painel.module.css';
-import type { BoardDevelopment, BoardUnit } from './LeadsBoard';
+import { boardUnitLabel, type BoardDevelopment, type BoardUnit } from './LeadsBoard';
 
 /** Lead manual (estande, telefone): origem manual, consentimento presencial obrigatório. */
 export function ManualLeadForm({
@@ -95,7 +95,7 @@ export function ManualLeadForm({
             <option value="">Sem unidade</option>
             {devUnits.map((u) => (
               <option key={u.id} value={u.id}>
-                {u.code}
+                {boardUnitLabel(u)}
               </option>
             ))}
           </select>

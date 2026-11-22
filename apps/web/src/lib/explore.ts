@@ -6,41 +6,90 @@
 import { floorObjectKey } from '@vidomo/viewer/naming';
 import { UNIT_STATUSES, type UnitStatus, type UnitStatusMap } from '@vidomo/viewer/types';
 import type { PublicUnit } from './public-development';
+import { floorShort, towerShort } from './unit-ref';
 
 export interface FloorEntry {
   /** object_key do andar (ex.: 'TA__F08'). */
   key: string;
   tower: string;
   number: number;
+  /** Rótulo do andar (ex.: "Térreo"); null = "<número>º". */
+  label: string | null;
   /** Unidades disponíveis no andar, sem filtros. */
   available: number;
 }
+
+export interface TowerEntry {
+  /** Código do bloco (ex.: 'B09'). */
+  key: string;
+  /** Nome completo (ex.: "Bloco 09"). */
+  name: string;
+  /** Nome curto (ex.: "09"; sem cadastro, o código). */
+  short: string;
+  sortOrder: number;
+  /** Unidades disponíveis no bloco, sem filtros. */
+  available: number;
+}
+
+/** Blocos do empreendimento, na ordem de exibição (empate pelo código). */
+export function towersFromUnits(units: PublicUnit[], statusMap: UnitStatusMap): TowerEntry[] {
+  const byKey = new Map<string, TowerEntry>();
+  for (const u of units) {
+    const entry = byKey.get(u.tower_code) ?? {
+      key: u.tower_code,
+      name: u.tower_name,
+      short: towerShort(u),
+      sortOrder: u.tower_sort_order,
+      available: 0,
+    };
+    if ((statusMap[u.object_key] ?? u.status) === 'available') entry.available++;
+    byKey.set(u.tower_code, entry);
+  }
+  return [...byKey.values()].sort(
+    (a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key),
+  );
+}
+
+/** "Bloco 09 · 6 livres". */
+export function towerLabel(t: Pick<TowerEntry, 'name' | 'available'>): string {
+  return `${t.name} · ${freeText(t.available)}`;
+}
+
+const freeText = (n: number) => (n === 1 ? '1 livre' : `${n} livres`);
 
 export function floorKeyOf(unit: Pick<PublicUnit, 'tower_code' | 'floor_number'>): string {
   return floorObjectKey(unit.tower_code, unit.floor_number);
 }
 
-/** Andares do empreendimento, do mais alto para o mais baixo. */
-export function floorsFromUnits(units: PublicUnit[], statusMap: UnitStatusMap): FloorEntry[] {
+/**
+ * Andares do mais alto para o mais baixo: de um bloco (`tower`) ou do empreendimento todo
+ * (sem `tower`, como numa torre só).
+ */
+export function floorsFromUnits(
+  units: PublicUnit[],
+  statusMap: UnitStatusMap,
+  tower: string | null = null,
+): FloorEntry[] {
   const byKey = new Map<string, FloorEntry>();
   for (const u of units) {
+    if (tower !== null && u.tower_code !== tower) continue;
     const key = floorKeyOf(u);
     const entry = byKey.get(key) ?? {
       key,
       tower: u.tower_code,
       number: u.floor_number,
+      label: u.floor_label,
       available: 0,
     };
     if ((statusMap[u.object_key] ?? u.status) === 'available') entry.available++;
     byKey.set(key, entry);
   }
-  // TODO(várias torres): agrupar por torre no seletor.
   return [...byKey.values()].sort((a, b) => b.number - a.number || a.tower.localeCompare(b.tower));
 }
 
-export function floorLabel(f: Pick<FloorEntry, 'number' | 'available'>): string {
-  const free = f.available === 1 ? '1 livre' : `${f.available} livres`;
-  return `${f.number}º · ${free}`;
+/** "2º · 1 livre" ou "Térreo · 2 livres". */
+export function floorLabel(f: Pick<FloorEntry, 'number' | 'label' | 'available'>): string {
+  return `${floorShort({ floor_number: f.number, floor_label: f.label })} · ${freeText(f.available)}`;
 }
 
 export interface Filters {

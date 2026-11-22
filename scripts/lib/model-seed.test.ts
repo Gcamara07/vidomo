@@ -91,6 +91,16 @@ describe('buildSeedSql', () => {
     expect(sql).toContain("2, 'B09__F02', null)");
   });
 
+  it('câmeras do viewer como jsonb (ou null)', () => {
+    expect(sql).toContain("'teste-blocos/leve.glb', null, null)");
+    const withCam = buildSeedSql(
+      [B09],
+      { ...config, viewerCameras: { default: { position: [1, 2, 3], target: [0, 0, 0] } } },
+      'x.glb',
+    );
+    expect(withCam).toContain(`'{"default":{"position":[1,2,3],"target":[0,0,0]}}'::jsonb)`);
+  });
+
   it('escapa aspas e não roda de novo se o slug existir', () => {
     expect(sql).toContain("'Residencial D''Teste'");
     expect(sql).toContain("where slug = 'teste-blocos') then");

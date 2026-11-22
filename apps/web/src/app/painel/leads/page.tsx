@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { getPanelContext } from '@/lib/panel/context';
 import { LEAD_COLUMNS, leadFromRow } from '@/lib/panel/leads';
 import { serverClient } from '@/lib/supabase/server';
+import { linkCodes } from '@/lib/unit-ref';
 import styles from '../painel.module.css';
 import { LeadsBoard, type BoardDevelopment, type BoardMember, type BoardUnit } from './LeadsBoard';
 
@@ -29,7 +30,7 @@ export default async function LeadsPage({ searchParams }: PageProps) {
       .order('created_at', { ascending: false })
       .limit(LEADS_LIMIT),
     supabase.from('developments').select('id, organization_id, name, slug, status').order('name'),
-    supabase.from('units').select('id, development_id, code'),
+    supabase.from('units').select('id, development_id, code, towers(code, name, sort_order)'),
     supabase.from('organization_members').select('organization_id, user_id, role'),
     supabase.from('profiles').select('id, full_name'),
     supabase
@@ -59,13 +60,14 @@ export default async function LeadsPage({ searchParams }: PageProps) {
     slug: d.slug as string,
     published: d.status === 'published',
   }));
-  const boardUnits: BoardUnit[] = (units.data ?? [])
-    .map((u) => ({
-      id: u.id as string,
-      developmentId: u.development_id as string,
-      code: u.code as string,
-    }))
-    .sort((a, b) => a.code.localeCompare(b.code, 'pt-BR', { numeric: true }));
+  const boardUnits = toBoardUnits(
+    (units.data ?? []) as unknown as {
+      id: string;
+      development_id: string;
+      code: string;
+      towers: { code: string; name: string; sort_order: number } | null;
+    }[],
+  );
 
   return (
     <main className={styles.page}>
@@ -91,4 +93,46 @@ export default async function LeadsPage({ searchParams }: PageProps) {
       />
     </main>
   );
+}
+
+/**
+ * Unidades do painel: bloco só em empreendimento com vários blocos, código do link da
+ * página pública (mesma regra de lá) e ordem bloco → código.
+ */
+function toBoardUnits(
+  rows: {
+    id: string;
+    development_id: string;
+    code: string;
+    towers: { code: string; name: string; sort_order: number } | null;
+  }[],
+): BoardUnit[] {
+  const byDev = new Map<string, typeof rows>();
+  for (const r of rows) byDev.set(r.development_id, [...(byDev.get(r.development_id) ?? []), r]);
+  const out: (BoardUnit & { order: number; tower: string })[] = [];
+  for (const list of byDev.values()) {
+    const many = new Set(list.map((r) => r.towers?.code)).size > 1;
+    const links = linkCodes(
+      list.map((r) => ({ object_key: r.id, code: r.code, tower_code: r.towers?.code ?? '' })),
+    );
+    for (const r of list) {
+      out.push({
+        id: r.id,
+        developmentId: r.development_id,
+        code: r.code,
+        linkCode: links.get(r.id)!,
+        towerName: many ? (r.towers?.name ?? null) : null,
+        order: r.towers?.sort_order ?? 0,
+        tower: r.towers?.code ?? '',
+      });
+    }
+  }
+  return out
+    .sort(
+      (a, b) =>
+        a.order - b.order ||
+        a.tower.localeCompare(b.tower) ||
+        a.code.localeCompare(b.code, 'pt-BR', { numeric: true }),
+    )
+    .map(({ order: _order, tower: _tower, ...u }) => u);
 }

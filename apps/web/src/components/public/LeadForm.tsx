@@ -45,6 +45,7 @@ export default function LeadForm({
   slug,
   objectKey,
   unitCode,
+  towerName = null,
   source,
   contact,
   kind = 'unit',
@@ -55,6 +56,8 @@ export default function LeadForm({
   slug: string;
   objectKey: string;
   unitCode: string;
+  /** Bloco da unidade, com vários blocos ("Bloco 09"); null com um só. */
+  towerName?: string | null;
   source: LeadSource;
   contact: PublicContact;
   /** 'similar': vendida/indisponível, pede opções parecidas com a unidade como referência. */
@@ -160,6 +163,7 @@ export default function LeadForm({
       <h3 id={fieldId('title')} ref={titleRef} tabIndex={-1} className={styles.formTitle}>
         {kind === 'similar' ? 'Opções parecidas com a unidade' : 'Tenho interesse na unidade'}{' '}
         <span className={styles.mono}>{unitCode}</span>
+        {towerName ? ` do ${towerName}` : ''}
       </h3>
 
       <div className={styles.field}>

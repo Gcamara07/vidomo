@@ -75,6 +75,8 @@ export interface SeedConfig {
   /** Caminhos no bucket `models` (resolvidos no app por getAssetUrl()). */
   modelPath: string;
   detailModelPath?: string;
+  /** Câmeras do viewer (developments.viewer_cameras), ex.: { default: { position, target } }. */
+  viewerCameras?: Record<string, { position: number[]; target: number[] }>;
   /**
    * Nome e nome curto do bloco. Marcadores: {code} = código ('B09'), {num} = dígitos do
    * código ('09'). Ex.: { name: 'Bloco {num}', shortName: '{num}' }.
@@ -169,11 +171,14 @@ export function buildSeedSql(towers: ModelTower[], config: SeedConfig, source: s
   out('  end if;');
   out();
   out('  insert into public.developments');
-  out('    (organization_id, slug, name, status, price_display, model_path, detail_model_path)');
+  out(
+    '    (organization_id, slug, name, status, price_display, model_path, detail_model_path, viewer_cameras)',
+  );
   out(
     `  values (v_org, ${q(config.slug)}, ${q(config.name)}, ${q(config.status ?? 'published')}, ` +
       `${q(config.priceDisplay ?? 'from')}, ${q(config.modelPath)}, ` +
-      `${config.detailModelPath ? q(config.detailModelPath) : 'null'})`,
+      `${config.detailModelPath ? q(config.detailModelPath) : 'null'}, ` +
+      `${config.viewerCameras ? `${q(JSON.stringify(config.viewerCameras))}::jsonb` : 'null'})`,
   );
   out('  returning id into v_dev;');
   out();

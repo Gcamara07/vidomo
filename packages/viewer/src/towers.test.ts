@@ -12,6 +12,7 @@ import {
   signedDistanceToHull,
   towerAtPoint,
   towerKeyOf,
+  outwardAzimuth,
   towerLabelPosition,
   type Point2,
   type TowerPartInput,
@@ -272,5 +273,21 @@ describe('classifyZone com vários blocos', () => {
     // VIS__ARVORES do Vista: cruza a torre e sobe acima do 1º andar, mas é entorno.
     const trees = box([-20.61, 2.11, -19.56], [21.02, 7.61, 26.41]);
     expect(classifyZone(trees, one, { spanMinTop: 7 })).toBe('site');
+  });
+});
+
+describe('outwardAzimuth (câmera do modo bloco)', () => {
+  it('do lado oposto ao bloco colado; sem vizinho, mantém o ângulo atual', () => {
+    const b09 = towers.get('B09')!;
+    const b10 = towers.get('B10')!;
+    const az = outwardAzimuth(b09, [b10], 0)!;
+    // Direção da câmera (sin, cos) aponta para longe do B10.
+    const toB10: [number, number] = [
+      (b10.bounds.min[0] + b10.bounds.max[0]) / 2 - 18.14,
+      (b10.bounds.min[2] + b10.bounds.max[2]) / 2 - -6.235,
+    ];
+    expect(Math.sin(az) * toB10[0] + Math.cos(az) * toB10[1]).toBeLessThan(0);
+    expect(outwardAzimuth(b09, [b10])).toBeCloseTo(az + 0.6);
+    expect(outwardAzimuth(b09, [])).toBeUndefined();
   });
 });

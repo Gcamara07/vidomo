@@ -3,7 +3,13 @@
  * public_development / public_development_units / public_contact.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { UNIT_STATUSES, type UnitStatus, type UnitStatusMap } from '@vidomo/viewer/types';
+import {
+  UNIT_STATUSES,
+  type CameraPreset,
+  type UnitStatus,
+  type UnitStatusMap,
+} from '@vidomo/viewer/types';
+import { linkCodes } from './unit-ref';
 
 export interface PublicDevelopment {
   slug: string;
@@ -12,13 +18,25 @@ export interface PublicDevelopment {
   model_path: string | null;
   /** GLB de detalhes opcional (camada 2). */
   detail_model_path: string | null;
+  /** Câmeras do viewer (manifest.cameras), ex.: a vista inicial do condomínio. */
+  viewer_cameras: { default?: CameraPreset } | null;
 }
 
 export interface PublicUnit {
   object_key: string;
   code: string;
+  /** Código da unidade nos links (?u=): calculado no app (unit-ref.ts → linkCodes). */
+  link_code: string;
   tower_code: string;
+  /** Nome do bloco (ex.: "Bloco 09", "Torre A"). */
+  tower_name: string;
+  /** Nome curto do bloco (ex.: "09"); null = o código. */
+  tower_short_name: string | null;
+  /** Ordem de exibição do bloco. */
+  tower_sort_order: number;
   floor_number: number;
+  /** Rótulo do andar (ex.: "Térreo"); null = "<número>º andar". */
+  floor_label: string | null;
   unit_type_name: string | null;
   area_m2: number | null;
   bedrooms: number | null;
@@ -70,12 +88,22 @@ export async function fetchPublicUnits(
 ): Promise<PublicUnit[]> {
   const { data, error } = await client.rpc('public_development_units', { p_slug: slug });
   if (error) throw new Error(`public_development_units: ${error.message}`);
-  return (data as PublicUnit[]).map((u) => ({
-    ...u,
-    // numeric do Postgres pode chegar como string dependendo da configuração.
-    area_m2: u.area_m2 === null ? null : Number(u.area_m2),
-    price: u.price === null || u.price === undefined ? null : Number(u.price),
-  }));
+  return withLinkCodes(
+    (data as Omit<PublicUnit, 'link_code'>[]).map((u) => ({
+      ...u,
+      // numeric do Postgres pode chegar como string dependendo da configuração.
+      area_m2: u.area_m2 === null ? null : Number(u.area_m2),
+      price: u.price === null || u.price === undefined ? null : Number(u.price),
+    })),
+  );
+}
+
+/** Acrescenta o código de link de cada unidade (depende das outras do empreendimento). */
+export function withLinkCodes<T extends Omit<PublicUnit, 'link_code'>>(
+  units: T[],
+): (T & { link_code: string })[] {
+  const codes = linkCodes(units);
+  return units.map((u) => ({ ...u, link_code: codes.get(u.object_key)! }));
 }
 
 export function toStatusMap(units: PublicUnit[]): UnitStatusMap {

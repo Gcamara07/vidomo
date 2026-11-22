@@ -40,7 +40,14 @@ const createdJob = (patch: Partial<Job> = {}): Job => ({
     source: 'unit_link',
     status: 'new',
     created_at: '2026-11-15T13:00:00.123456+00:00',
-    unit: { code: '802', floor: 8, type: 'Tipo B' },
+    unit: {
+      code: '802',
+      link_code: '802',
+      tower: { code: 'TA', name: 'Torre A' },
+      floor: 8,
+      floor_label: null,
+      type: 'Tipo B',
+    },
   },
   ...patch,
 });
@@ -68,7 +75,9 @@ describe('payload do webhook', () => {
         created_at: '2026-11-15T13:00:00.123Z',
         unit: {
           code: '802',
+          tower: { code: 'TA', name: 'Torre A' },
           floor: 8,
+          floor_label: null,
           type: 'Tipo B',
           url: 'https://www.vidomo.com.br/e/residencial-vista?u=802',
         },
@@ -93,6 +102,39 @@ describe('payload do webhook', () => {
       'created_at',
       'unit',
     ]);
+  });
+
+  it('vários blocos: link com o código do bloco e rótulo do andar', () => {
+    const job = createdJob();
+    (job.lead as { unit: unknown }).unit = {
+      code: '101',
+      link_code: 'B09-101',
+      tower: { code: 'B09', name: 'Bloco 09' },
+      floor: 1,
+      floor_label: 'Térreo',
+      type: 'Térreo com área privativa',
+    };
+    expect((webhookPayload(job, NOW).lead as { unit: unknown }).unit).toEqual({
+      code: '101',
+      tower: { code: 'B09', name: 'Bloco 09' },
+      floor: 1,
+      floor_label: 'Térreo',
+      type: 'Térreo com área privativa',
+      url: 'https://www.vidomo.com.br/e/residencial-vista?u=B09-101',
+    });
+  });
+
+  it('job de antes da migration (sem bloco nem link_code): link pelo código', () => {
+    const job = createdJob();
+    (job.lead as { unit: unknown }).unit = { code: '802', floor: 8, type: 'Tipo B' };
+    expect((webhookPayload(job, NOW).lead as { unit: unknown }).unit).toEqual({
+      code: '802',
+      tower: null,
+      floor: 8,
+      floor_label: null,
+      type: 'Tipo B',
+      url: 'https://www.vidomo.com.br/e/residencial-vista?u=802',
+    });
   });
 
   it('lead sem unidade: unit null', () => {
@@ -238,11 +280,31 @@ describe('e-mail', () => {
     to: ['comercial@exemplo.com', 'gerente@exemplo.com'],
   });
 
+  it('vários blocos: bloco no assunto, no rótulo e no link da unidade', () => {
+    const multi = createdJob({ channel: 'email', to: ['comercial@exemplo.com'] });
+    (multi.lead as { unit: unknown }).unit = {
+      code: '201',
+      link_code: 'B09-201',
+      tower: { code: 'B09', name: 'Bloco 09' },
+      floor: 2,
+      floor_label: null,
+      type: 'Tipo',
+    };
+    const email = leadEmail(multi);
+    expect(email.subject).toBe('Novo lead: Bloco 09 · 201 · Residencial Vista');
+    expect(email.text).toContain('Unidade: 201 · Bloco 09 · 2º andar · Tipo');
+    expect(email.html).toContain('/e/residencial-vista?u=B09-201');
+    // A marca é feminina: "a Vidomo".
+    expect(email.text).toContain('Construtora Exemplo na Vidomo.');
+    expect(email.html).toContain('Construtora Exemplo na Vidomo.');
+    expect(`${email.text}${email.html}`).not.toMatch(/\b(no|do|pelo) Vidomo\b/);
+  });
+
   it('assunto, campos, link do painel e HTML escapado', () => {
     const email = leadEmail(job);
-    expect(email.subject).toBe('Novo lead: 802 · Residencial Vista');
+    expect(email.subject).toBe('Novo lead: Torre A · 802 · Residencial Vista');
     expect(email.replyTo).toBe('maria@exemplo.com');
-    expect(email.text).toContain('Unidade: 802 · 8º andar · Tipo B');
+    expect(email.text).toContain('Unidade: 802 · Torre A · 8º andar · Tipo B');
     expect(email.text).toContain('Telefone: (16) 99769-4880');
     expect(email.text).toContain('Origem: Link da unidade');
     expect(email.text).toContain('Recebido em: 15/11/2026, 10:00');
@@ -274,7 +336,7 @@ describe('e-mail', () => {
       from: EMAIL_FROM,
       to: ['comercial@exemplo.com', 'gerente@exemplo.com'],
       reply_to: 'maria@exemplo.com',
-      subject: 'Novo lead: 802 · Residencial Vista',
+      subject: 'Novo lead: Torre A · 802 · Residencial Vista',
     });
   });
 

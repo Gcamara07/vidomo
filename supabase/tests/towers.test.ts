@@ -4,7 +4,7 @@
  * Usa um empreendimento de 2 blocos numa organização só de teste (org C), criado na primeira
  * execução e reaproveitado nas seguintes: unidades não podem ser apagadas (o histórico de
  * status é imutável, regra 3), e as orgs A e B do seed ficam intactas. Não depende do seed
- * local do teste-flora (fora do git). Some no próximo `pnpm db:reset`.
+ * local do condomínio de teste (fora do git). Some no próximo `pnpm db:reset`.
  * Roda SÓ no Supabase local (pnpm test:db); nunca no remoto (pnpm test:remote só lê
  * supabase/remote-tests/).
  */

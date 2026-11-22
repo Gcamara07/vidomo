@@ -20,7 +20,7 @@ import {
 
 const box = (min: [number, number, number], max: [number, number, number]): Box => ({ min, max });
 
-// Caixas reais do teste-flora (par B09 + B10, blocos girados ~26° em planta: as caixas
+// Caixas reais do condomínio de teste (par B09 + B10, blocos girados ~26° em planta: as caixas
 // alinhadas aos eixos se sobrepõem). 4 andares de 2,8 m, topo em 12,4 m.
 const FLOORS = [1, 2, 3, 4];
 const slabB09 = (f: number) =>

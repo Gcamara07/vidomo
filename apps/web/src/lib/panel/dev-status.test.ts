@@ -36,14 +36,14 @@ function unit(p: Partial<DevStatusUnit> & { code: string; floor: number }): DevS
 }
 
 // Condomínio de blocos com ordem de exibição diferente do código (B10 antes de B02).
-const flora = (tower: number, order: number, floor: number, pos: number, status = 'available') =>
+const blocos = (tower: number, order: number, floor: number, pos: number, status = 'available') =>
   unit({
     code: `${floor}0${pos}`,
     floor,
     floorLabel: floor === 1 ? 'Térreo' : null,
     status: status as DevStatusUnit['status'],
-    development: 'Residencial Flora (teste)',
-    developmentSlug: 'residencial-flora-teste',
+    development: 'Condomínio de teste',
+    developmentSlug: 'condominio-de-teste',
     towerCode: `B${pad(tower)}`,
     towerName: `Bloco ${pad(tower)}`,
     towerShort: pad(tower),
@@ -53,29 +53,35 @@ const flora = (tower: number, order: number, floor: number, pos: number, status 
 const units = [
   unit({ code: '802', floor: 8 }),
   unit({ code: '101', floor: 1, status: 'sold' }),
-  flora(2, 2, 2, 1),
-  flora(10, 1, 1, 2, 'sold'),
-  flora(10, 1, 2, 1),
-  flora(2, 2, 1, 1),
-  flora(10, 1, 1, 1),
+  blocos(2, 2, 2, 1),
+  blocos(10, 1, 1, 2, 'sold'),
+  blocos(10, 1, 2, 1),
+  blocos(2, 2, 1, 1),
+  blocos(10, 1, 1, 1),
 ];
 
 describe('ordem', () => {
   it('empreendimento → bloco (ordem do cadastro) → andar → unidade', () => {
-    expect(sortUnits(units).map((u) => `${u.developmentSlug[12]}${u.towerCode}-${u.code}`)).toEqual(
-      ['fB10-101', 'fB10-102', 'fB10-201', 'fB02-101', 'fB02-201', 'vTA-101', 'vTA-802'],
-    );
+    expect(sortUnits(units).map((u) => `${u.developmentSlug[0]}${u.towerCode}-${u.code}`)).toEqual([
+      'cB10-101',
+      'cB10-102',
+      'cB10-201',
+      'cB02-101',
+      'cB02-201',
+      'rTA-101',
+      'rTA-802',
+    ]);
   });
 });
 
 describe('filtros', () => {
   it('abre no primeiro empreendimento da lista, com o resto em "todos"', () => {
     expect(developmentOptions(units).map((d) => d.slug)).toEqual([
-      'residencial-flora-teste',
+      'condominio-de-teste',
       'residencial-vista',
     ]);
     expect(defaultFilters(units)).toEqual({
-      development: 'residencial-flora-teste',
+      development: 'condominio-de-teste',
       tower: '',
       floor: null,
       status: '',
@@ -100,11 +106,11 @@ describe('filtros', () => {
   });
 
   it('opções de bloco e andar do empreendimento (andar com rótulo do cadastro)', () => {
-    expect(towerOptions(units, 'residencial-flora-teste')).toEqual([
+    expect(towerOptions(units, 'condominio-de-teste')).toEqual([
       { code: 'B10', name: 'Bloco 10' },
       { code: 'B02', name: 'Bloco 02' },
     ]);
-    expect(floorOptions(units, 'residencial-flora-teste', '')).toEqual([
+    expect(floorOptions(units, 'condominio-de-teste', '')).toEqual([
       { number: 1, label: 'Térreo' },
       { number: 2, label: '2º' },
     ]);
@@ -117,14 +123,14 @@ describe('filtros', () => {
 
 describe('bloco', () => {
   it('coluna e grupos só com mais de um bloco', () => {
-    expect(manyTowers(units, 'residencial-flora-teste')).toBe(true);
+    expect(manyTowers(units, 'condominio-de-teste')).toBe(true);
     expect(manyTowers(units, 'residencial-vista')).toBe(false);
   });
 
   it('coluna: nome curto, ou o nome; andar: rótulo, ou o número', () => {
-    expect(towerColumn(flora(9, 9, 2, 1))).toBe('09');
+    expect(towerColumn(blocos(9, 9, 2, 1))).toBe('09');
     expect(towerColumn(unit({ code: '802', floor: 8 }))).toBe('Torre A');
-    expect(floorColumn(flora(9, 9, 1, 1))).toBe('Térreo');
+    expect(floorColumn(blocos(9, 9, 1, 1))).toBe('Térreo');
     expect(floorColumn(unit({ code: '802', floor: 8 }))).toBe('8');
   });
 

@@ -2,9 +2,9 @@
  * Exemplo isolado do <Viewer> com status falsos (sem Supabase).
  *   pnpm --filter @vidomo/viewer example
  * Query string:
- *   ?demo=vista|flora  conjunto de teste (padrão: vista). flora = teste de vários blocos
+ *   ?demo=vista|blocos conjunto de teste (padrão: vista). blocos = condomínio de teste
  *                      (20 blocos × 4 andares × 4 unidades; GLBs locais, fora do git:
- *                      `pnpm model:compress modelos/teste-flora-leve.glb` e o de detalhes)
+ *                      `pnpm model:compress modelos/teste-blocos-leve.glb` e o de detalhes)
  *   ?model=<url>       GLB leve (padrão: o do demo, servido de scripts/out)
  *   ?detail=<url>      GLB de detalhes (padrão: o do demo; ?detail=none desliga)
  *   ?tower=B09         abre no modo bloco (com 2+ torres)
@@ -59,10 +59,10 @@ const DEMOS: Record<string, Demo> = {
     // Como no seed: finais 1 e 3 = 2 dorms (Tipo A); 2 e 4 = 3 dorms (Tipo B).
     bedroomsOf: (key) => (Number(parseUnitKey(key)?.code.slice(-1)) % 2 === 1 ? 2 : 3),
   },
-  flora: {
-    title: 'Teste Flora',
-    model: '/teste-flora-leve.glb',
-    detail: '/teste-flora-detalhes.glb',
+  blocos: {
+    title: 'Condomínio de teste',
+    model: '/teste-blocos-leve.glb',
+    detail: '/teste-blocos-detalhes.glb',
     towers: Array.from({ length: 20 }, (_, i) => `B${String(i + 1).padStart(2, '0')}`),
     floors: 4,
     perFloor: 4,

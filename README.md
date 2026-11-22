@@ -206,7 +206,7 @@ pnpm --filter @vidomo/viewer example   # http://localhost:5174 e na rede local
 ```
 
 Status falsos, sem Supabase: tocar seleciona; "Mudar um status" e "Automático" trocam cores
-sem recarregar o modelo. `?model=<url>` carrega outro GLB. `?demo=flora` usa o teste de
+sem recarregar o modelo. `?model=<url>` carrega outro GLB. `?demo=blocos` usa o teste de
 vários blocos (GLBs comprimidos em `scripts/out/`, fora do git); `?tower=B09` e
 `?floor=B09__F02` abrem direto no bloco ou no andar.
 

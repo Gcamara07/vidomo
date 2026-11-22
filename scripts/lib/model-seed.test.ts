@@ -10,7 +10,7 @@ import {
   type SeedConfig,
 } from './model-seed';
 
-// Centros reais do teste-flora (bloco B09, 2º andar), em planta x/z do glTF.
+// Centros reais do condomínio de teste (bloco B09, 2º andar), em planta x/z do glTF.
 const B09: ModelTower = {
   code: 'B09',
   center: [18.14, -6.24],

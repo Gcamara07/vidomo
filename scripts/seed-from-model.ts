@@ -8,9 +8,9 @@
  * Exemplo (teste de vários blocos, SÓ local — config e SQL ficam em supabase/seeds/local/,
  * ignorada pelo git e carregada pelo `supabase db reset`):
  *
- *   pnpm model:seed modelos/teste-flora-leve.glb \
- *     --config supabase/seeds/local/residencial-flora-teste.json \
- *     --out supabase/seeds/local/residencial-flora-teste.sql
+ *   pnpm model:seed modelos/teste-blocos-leve.glb \
+ *     --config supabase/seeds/local/condominio-de-teste.json \
+ *     --out supabase/seeds/local/condominio-de-teste.sql
  *
  * Formato do JSON: SeedConfig em scripts/lib/model-seed.ts.
  */

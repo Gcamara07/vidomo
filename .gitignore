@@ -40,8 +40,10 @@ modelos/preview-*.png
 *.pem
 *.key
 
-# Teste de vários blocos (teste-flora): modelo e imagens de terceiros, só para uso local.
+# Teste de vários blocos (condomínio de teste): modelo e imagens de terceiros, só local.
 # Nada disso vai para o git, para o Supabase remoto nem para a Vercel.
 modelos/teste-flora*
 modelos/referencias-flora/
+modelos/teste-blocos*
+modelos/referencias-blocos/
 supabase/seeds/local/

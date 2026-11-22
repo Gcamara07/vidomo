@@ -480,6 +480,12 @@ pnpm measure --network fast4g --runs 9 --url https://www.vidomo.com.br/e/residen
 resposta e rede reais), detalhes em 2,16 s, 60 fps; com CPU 4× mais lenta, 2,42 s. Bem
 dentro da meta do PRD (até 5 s em 4G num aparelho de entrada).
 
+**Bloco M (vários blocos), 22/11/2026, 4G rápido, mediana de 9:** prédio interativo em
+**1,58 s** no site publicado (variação de 1,52 a 1,81 s), detalhes em 2,07 s, 60 fps; com CPU
+4× mais lenta, 2,04 s. Contra o Bloco 2: 1,70 s, 2,16 s e 2,42 s. Uma rodada de 5 execuções
+feita logo depois do deploy deu 1,94 s; minutos depois, voltou à faixa acima. JS inicial da
+página: 151,7 KB gzip (era 146,9 KB); viewer/three.js: 288,1 KB. `pnpm test:remote`: 28 de 28.
+
 No build local (`next start`, porta 3100) o Bloco 2 mede 1,66 s contra 1,53 s da referência
 (`0b948ff`) medida no mesmo momento. A diferença vem do HTTP/1.1 local: a página passou a
 ter 15 pedidos antes do three.js (eram 12) e, com no máximo 6 conexões por domínio, o

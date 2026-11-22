@@ -18,6 +18,9 @@
  *   - GLB leve e de detalhes: bytes transferidos
  *   - fps: quadros com desenho WebGL por segundo durante 3 s girando o prédio (com as
  *     duas camadas carregadas)
+ *   - trocas (depois do fps): do toque no seletor até a câmera chegar
+ *     (performance.mark('vidomo:view-settled'), já com a transição de 0,5 s):
+ *     vista geral → bloco e bloco → andar (vários blocos), andar → andar (todos)
  */
 import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
@@ -106,7 +109,38 @@ interface RunResult {
   detailGlbBytes: number;
   fps: number;
   renderer: string;
+  /** Troca de vista pelo seletor (ms), null quando não se aplica (ex.: um bloco só). */
+  towerSwitchMs: number | null;
+  floorSwitchMs: number | null;
+  floorToFloorMs: number | null;
 }
+
+/**
+ * Toca no botão do seletor e espera a câmera chegar: a última marca 'vidomo:view-settled'
+ * depois do toque, sem marca nova por 800 ms (abrir um bloco também muda a área livre e
+ * pode reenquadrar). Em string pelo mesmo motivo do FRAME_COUNTER.
+ */
+const SWITCH_TIMER = (selector: string) => `new Promise((resolve) => {
+  const btn = document.querySelector(${JSON.stringify(selector)});
+  if (!btn) return resolve(null);
+  const before = performance.getEntriesByName('vidomo:view-settled').length;
+  const t0 = performance.now();
+  btn.click();
+  let last = null;
+  let lastSeen = performance.now();
+  const id = setInterval(() => {
+    const marks = performance.getEntriesByName('vidomo:view-settled');
+    if (marks.length > before && marks.at(-1).startTime !== last) {
+      last = marks.at(-1).startTime;
+      lastSeen = performance.now();
+    }
+    const quiet = performance.now() - lastSeen > 800;
+    if ((last !== null && quiet) || performance.now() - t0 > 15000) {
+      clearInterval(id);
+      resolve(last === null ? null : last - t0);
+    }
+  }, 20);
+})`;
 
 async function measureOnce(browser: Browser, url: string, cpu: number): Promise<RunResult> {
   const context = await browser.createBrowserContext();
@@ -213,6 +247,29 @@ async function measureOnce(browser: Browser, url: string, cpu: number): Promise<
   const elapsed = (Date.now() - start) / 1000;
   await page.mouse.up();
 
+  // Trocas de vista pelo seletor (depois de soltar o mouse e a câmera parar).
+  await new Promise((r) => setTimeout(r, 1200));
+  const many = await page.evaluate(() => !!document.querySelector('nav[aria-label="Blocos"]'));
+  let towerSwitchMs: number | null = null;
+  let floorSwitchMs: number | null = null;
+  if (many) {
+    // Um bloco do meio da lista, e o andar mais alto dele.
+    towerSwitchMs = (await page.evaluate(
+      SWITCH_TIMER('nav[aria-label="Blocos"] button[data-tower]:nth-of-type(9)'),
+    )) as number | null;
+    floorSwitchMs = (await page.evaluate(
+      SWITCH_TIMER('nav[aria-label^="Andares do"] button[data-floor]'),
+    )) as number | null;
+  }
+  // Andar → andar: o seguinte (mais baixo) na lista.
+  const floorSel = many ? 'nav[aria-label^="Andares do"]' : 'nav[aria-label="Andares"]';
+  if (!many) {
+    await page.evaluate(SWITCH_TIMER(`${floorSel} button[data-floor]`));
+  }
+  const floorToFloorMs = (await page.evaluate(
+    SWITCH_TIMER(`${floorSel} button[data-floor][aria-pressed="true"] + button[data-floor]`),
+  )) as number | null;
+
   await Promise.all(pending);
   await context.close();
   return {
@@ -226,6 +283,9 @@ async function measureOnce(browser: Browser, url: string, cpu: number): Promise<
     detailGlbBytes: bytes.detailGlb,
     fps: frames / elapsed,
     renderer: timing.renderer,
+    towerSwitchMs,
+    floorSwitchMs,
+    floorToFloorMs,
   };
 }
 
@@ -261,8 +321,13 @@ async function main() {
         results.push(res);
         if (!values.json) {
           const detail = res.detailReadyMs === null ? '' : ` · detalhes ${sec(res.detailReadyMs)}`;
+          const sw = [
+            res.towerSwitchMs !== null ? `bloco ${sec(res.towerSwitchMs)}` : null,
+            res.floorSwitchMs !== null ? `andar ${sec(res.floorSwitchMs)}` : null,
+            res.floorToFloorMs !== null ? `andar→andar ${sec(res.floorToFloorMs)}` : null,
+          ].filter(Boolean);
           console.error(
-            `  ${name} #${r + 1}: FCP ${sec(res.fcpMs)} · pronto ${sec(res.viewerReadyMs)}${detail} · ${res.fps.toFixed(0)} fps`,
+            `  ${name} #${r + 1}: FCP ${sec(res.fcpMs)} · pronto ${sec(res.viewerReadyMs)}${detail} · ${res.fps.toFixed(0)} fps${sw.length ? ` · ${sw.join(' · ')}` : ''}`,
           );
         }
       }
@@ -295,6 +360,13 @@ async function main() {
       `  Detalhes na tela:              ${details.length ? sec(median(details)) : '— (sem modelo de detalhes)'}`,
     );
     console.log(`  fps girando o prédio:          ${med((r) => r.fps).toFixed(0)}`);
+    const medOf = (pick: (r: RunResult) => number | null) => {
+      const xs = rs.map(pick).filter((x): x is number => x !== null);
+      return xs.length ? sec(median(xs)) : '—';
+    };
+    console.log(`  Troca vista geral → bloco:     ${medOf((r) => r.towerSwitchMs)}`);
+    console.log(`  Troca bloco → andar:           ${medOf((r) => r.floorSwitchMs)}`);
+    console.log(`  Troca andar → andar:           ${medOf((r) => r.floorToFloorMs)}`);
   }
 }
 

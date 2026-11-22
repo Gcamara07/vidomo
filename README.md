@@ -39,6 +39,11 @@ pnpm dev             # http://localhost:3000/e/residencial-vista
 `pnpm db:reset` apaga os objetos do Storage: depois de um reset, rode os dois
 `pnpm model:upload` de novo. O Studio fica em http://127.0.0.1:54323.
 
+O reset também volta a configuração de notificações (`/painel/config`) para a do seed:
+e-mails fictícios e nenhum webhook. Para manter o seu e-mail de teste, ponha um `update` de
+`organization_settings` num arquivo em `supabase/seeds/local/` (ignorada pelo git; roda
+depois do `seed.sql`).
+
 ### Usuários de desenvolvimento (somente local)
 
 | Organização         | E-mail                | Senha            | Papel              |
@@ -107,6 +112,51 @@ pnpm model:upload scripts/out/residencial-vista-test.glb   # troca o modelo real
 - `--pad-mb N` acrescenta uma malha plana "pesada" até ~N MB, para simular o peso de um
   modelo real (ex.: `--out scripts/out/residencial-vista-1.5mb.glb --pad-mb 1.5`).
 
+### Empreendimento com vários blocos
+
+Um condomínio de vários blocos (ou torres) usa a mesma convenção de nomes; o que muda é só
+o dado. Nenhum código depende do empreendimento: 1 torre é o caso mais simples.
+
+**No Blender (modelo leve):**
+
+- Um código por bloco, só letras maiúsculas e números, usado em todos os objetos dele:
+  `TOWER__B09`, lajes `FLOOR__B09__F01` … `FLOOR__B09__F04`, unidades
+  `UNIT__B09__F02__U201`. `F01` é o primeiro andar com laje (o térreo, se houver unidades
+  nele); o número do andar vem do nome, não da posição.
+- O código da unidade (`U201`) pode se repetir entre blocos; dentro do bloco, não.
+- `TOWER__<bloco>` pode ser o núcleo (circulação) ou a casca do bloco; a laje `FLOOR__`
+  deve cobrir as unidades do andar. O enquadramento do bloco, a forma dele em planta e a
+  cota de cada andar saem daí.
+- **Norte em +Y** no Blender (−Z no glTF). A face de cada unidade (norte, sul, leste, oeste)
+  é calculada pela direção do centro do bloco ao centro da unidade.
+- **Blocos colados (pares do mesmo prédio):** não há convenção de nome. Dois blocos são
+  colados quando as lajes deles se tocam em planta (folga de 0,5 m); no modo andar, os
+  dois são recortados juntos e o resto do condomínio vira silhueta. Modele os pares com as
+  lajes encostadas. O validador lista os pares que encontrou.
+- **Camada de detalhes:** pode juntar o mesmo elemento de todos os blocos numa malha só
+  (ex.: `VIS__ESQUADRIAS`); o viewer divide por bloco ao carregar. Terreno, pisos e áreas
+  comuns ficam como entorno.
+
+**Banco:** `towers.name` ("Bloco 09"), `towers.short_name` ("09": rótulo no 3D, seletor e
+`?bloco=09`), `towers.sort_order` (ordem no seletor), `floors.label` ("Térreo") e
+`developments.viewer_cameras` (`{"default": {"position": […], "target": […]}}`, a vista
+inicial do condomínio; sem ela o viewer enquadra sozinho).
+
+**Seed a partir do GLB** (blocos, andares, unidades e face pelos nomes e posições; nome,
+tipos de planta, preços e câmera num JSON — formato em `scripts/lib/model-seed.ts`):
+
+```bash
+pnpm model:compress modelos/<leve>.glb
+pnpm model:seed modelos/<leve>.glb --config supabase/seeds/local/<slug>.json --out supabase/seeds/local/<slug>.sql
+pnpm db:reset          # carrega seed.sql e depois supabase/seeds/local/*.sql
+pnpm model:validate scripts/out/<leve>.glb --slug <slug>   # diferenças por bloco e pares
+pnpm model:upload scripts/out/<leve>.glb --slug <slug>
+```
+
+`supabase/seeds/local/` é ignorada pelo git (seeds só deste computador, como o teste de
+vários blocos com imagens de terceiros, que nunca vai para o remoto nem para a Vercel). Sem
+a pasta, o `db reset` só avisa "no files matched pattern" e segue.
+
 ## 4. Testes
 
 ```bash
@@ -156,7 +206,9 @@ pnpm --filter @vidomo/viewer example   # http://localhost:5174 e na rede local
 ```
 
 Status falsos, sem Supabase: tocar seleciona; "Mudar um status" e "Automático" trocam cores
-sem recarregar o modelo. `?model=<url>` carrega outro GLB.
+sem recarregar o modelo. `?model=<url>` carrega outro GLB. `?demo=flora` usa o teste de
+vários blocos (GLBs comprimidos em `scripts/out/`, fora do git); `?tower=B09` e
+`?floor=B09__F02` abrem direto no bloco ou no andar.
 
 ## 6. Medições (build de produção, 4G lento)
 
@@ -172,10 +224,11 @@ cache desligado e tela 360×800 @2x. Mede FCP, tempo até o prédio ficar intera
 (`vidomo:viewer-ready`), até os detalhes entrarem (`vidomo:detail-ready`), JS da página, do
 viewer e do supabase-js (gzip), GLBs e fps girando o prédio. A GPU é a do PC.
 
-**Troca de andar:** a página marca `vidomo:view-settled` quando a câmera termina uma
-transição (troca de andar ou volta ao prédio). O tempo vai do clique no seletor até essa
-marca: 500 ms de animação (easeInOutCubic) mais um quadro; com "reduzir movimento" no
-sistema, a troca é imediata.
+**Troca de andar e de bloco:** a página marca `vidomo:view-settled` quando a câmera termina
+uma transição. O `pnpm measure` toca no seletor depois do fps e mede do toque até essa
+marca (500 ms de animação, easeInOutCubic, mais o quadro): andar → andar sempre; com vários
+blocos, também vista geral → bloco e bloco → andar. Com "reduzir movimento" no sistema, a
+troca é imediata.
 
 **Resultados (build de produção local, tela 360×800 @2x, mediana de 3, novembro de 2026):**
 
@@ -192,6 +245,22 @@ JS gzip: página 143 KB, viewer/three.js 274 KB, supabase-js 67 KB (sob demanda)
 interativo.
 Draw calls: prédio 140, 8º andar 94, 1º andar 59. No celular de referência, modo andar:
 60 fps de média, 54 de mínimo.
+
+**Bloco M (vários blocos), 22/11/2026, 4G rápido, build de produção local, mediana de 5:**
+
+| Medida                  | Residencial Vista (antes → depois) | Teste de 20 blocos (local, fora do git) |
+| ----------------------- | ---------------------------------- | --------------------------------------- |
+| Interativo              | 1,65–1,69 s → 1,68–1,69 s          | 1,84 s (CPU 4×: 2,75 s)                 |
+| Detalhes na tela        | —                                  | 2,61 s (CPU 4×: 3,97 s)                 |
+| Vista geral → bloco     | —                                  | 0,57 s (CPU 4×: 0,72 s)                 |
+| Bloco → andar           | —                                  | 0,55 s (CPU 4×: 0,66 s)                 |
+| Andar → andar           | 0,51–0,52 s                        | 0,51 s (CPU 4×: 0,56 s)                 |
+| fps girando (GPU do PC) | 60                                 | 60 (CPU 4×: 25–34 na vista geral)       |
+
+O Vista foi medido em A/B alternado contra o build de antes do Bloco M (mesmo banco e mesma
+máquina): +0,9% na média. Draw calls (`?debug=1`): vista geral dos 20 blocos 970 (cada
+unidade e laje com seu contorno), modo bloco 208, modo andar 65; Vista 140. Com CPU 4×, o
+fps da vista geral oscilou com a carga da máquina (25–34); no modo bloco, 40–56.
 
 **fps no celular:** abra a demo com `?debug=1` (ex.: `http://<IP>:3000/e/residencial-vista?debug=1`).
 Aparece um contador com fps, média e mínimo enquanto o prédio gira, tempos até interativo e
@@ -278,6 +347,10 @@ export SUPABASE_SERVICE_ROLE_KEY=<sb_secret_…>     # só no terminal; nunca na
 ```
 
 ### Reaplicar migrations
+
+Quando uma migration muda uma função pública (ex.: `20261122000100` e `20261122000200`, do
+Bloco M), aplique no remoto **antes** do deploy do front; se a Edge Function `notifications`
+mudou junto, publique-a também (`pnpm exec supabase functions deploy notifications`).
 
 ```bash
 pnpm exec supabase db push --remote --dry-run   # lista o que falta; "seeds" deve vir vazio

@@ -19,7 +19,10 @@
  *
  * Desempenho: frameloop "demand" (só desenha quando algo muda), dpr limitado a 2,
  * MeshBasicMaterial sem luzes, sem sombras e sem pós-processamento. Trocar de andar só
- * muda constantes dos planos de corte e referências de material (sem recompilar shaders).
+ * muda constantes dos planos de corte e quais peças estão em cada lote (sem recompilar
+ * shaders). Desenho em lotes (batch.ts): unidades por bloco e aparência, lajes, estrutura e
+ * detalhes por aparência, cada lote com uma malha e um contorno; a unidade selecionada fica
+ * à parte. 20 blocos: 970 → 196 draw calls na vista geral.
  */
 import { Edges, Html, OrbitControls, useGLTF } from '@react-three/drei';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
@@ -39,15 +42,32 @@ import {
 } from 'react';
 import {
   Box3,
+  Color,
   Mesh,
   Vector3,
   type BufferGeometry,
   type Intersection,
+  type Plane,
   type Material,
   type PerspectiveCamera,
   type Raycaster,
 } from 'three';
-import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import {
+  LineMaterial,
+  LineSegments2,
+  LineSegmentsGeometry,
+  type OrbitControls as OrbitControlsImpl,
+} from 'three-stdlib';
+import {
+  groupBatches,
+  mergeBatch,
+  partArrays,
+  slabClass,
+  unitClass,
+  type BatchItem,
+  type SlabClass,
+  type UnitClass,
+} from './batch';
 import {
   azimuthOf,
   clampToBounds,
@@ -58,7 +78,7 @@ import {
   transitionMs,
   type Framing,
 } from './camera';
-import { clipRange, computeFloorLevels, type PartView } from './floors';
+import { clipRange, computeFloorLevels } from './floors';
 import {
   FILTERED_OUTLINE,
   GHOST_RENDER_ORDER,
@@ -564,10 +584,6 @@ function Building({
     [emitView],
   );
 
-  const floorOf = (part: ScenePart) => {
-    const fk = part.objectKey ? floorKeyOfUnit(part.objectKey) : null;
-    return fk ? levels.get(fk) : undefined;
-  };
   const isFloorMode = effectiveMode === 'floor';
 
   // Torre × entorno pela projeção no chão de cada torre (TOWER__ + FLOOR__, margem de 2 m).
@@ -608,6 +624,101 @@ function Building({
     [ghosts],
   );
 
+  // ---- Lotes (batch.ts): menos draw calls ------------------------------------------
+  // Vértices de cada peça em coordenadas de mundo, calculados uma vez por modelo.
+  const modelId = gltf.scene.uuid;
+  const unitItems = useMemo(
+    () =>
+      model.units.map((part) => ({
+        key: part.objectKey!,
+        part,
+        arrays: partArrays(part.geometry, part.matrix, 15),
+      })),
+    [model],
+  );
+  const slabItems = useMemo(
+    () =>
+      model.floors.map((part, i) => ({
+        key: part.objectKey ?? `~f${i}`,
+        part,
+        arrays: partArrays(part.geometry, part.matrix, 15),
+      })),
+    [model],
+  );
+  const structureItems = useMemo(
+    () =>
+      structure
+        .filter((p) => p.zone === 'tower')
+        .map((p, i) => ({
+          // Núcleo TOWER__: a chave é o código do bloco (toque sugere o bloco).
+          key: p.part.kind === 'tower' && p.part.objectKey ? p.part.objectKey : `~s${i}`,
+          tower: p.tower,
+          arrays: partArrays(p.part.geometry, p.part.matrix, 15),
+        })),
+    [structure],
+  );
+
+  // Unidades: um lote por bloco e classe visual; a selecionada fica fora (desenhada à parte).
+  const unitBatches = useMemo(
+    () =>
+      groupBatches(unitItems, (it) => {
+        const fk = floorKeyOfUnit(it.key);
+        const tower = towerKeyOf('unit', it.key);
+        const cls = unitClass(
+          partView(fk ? levels.get(fk) : undefined, tower, view, cut),
+          unitStatus[it.key],
+          it.key === selectedUnit,
+          dimmedUnits.has(it.key),
+        );
+        return cls && cls !== 'selected' ? `${tower ?? ''}|${cls}` : null;
+      }),
+    [unitItems, levels, view, cut, unitStatus, selectedUnit, dimmedUnits],
+  );
+  const selectedPart = useMemo(() => {
+    if (!selectedUnit) return null;
+    const it = unitItems.find((u) => u.key === selectedUnit);
+    if (!it) return null;
+    const fk = floorKeyOfUnit(it.key);
+    const cls = unitClass(
+      partView(fk ? levels.get(fk) : undefined, towerKeyOf('unit', it.key), view, cut),
+      unitStatus[it.key],
+      true,
+      false,
+    );
+    return cls === 'selected' ? it.part : null;
+  }, [selectedUnit, unitItems, levels, view, cut, unitStatus]);
+
+  // Lajes: um lote por classe (normal, abaixo do andar, de outro bloco).
+  const slabBatches = useMemo(
+    () =>
+      groupBatches(slabItems, (it) =>
+        slabClass(
+          partView(
+            it.part.objectKey ? levels.get(it.part.objectKey) : undefined,
+            towerKeyOf('floor', it.part.objectKey),
+            view,
+            cut,
+          ),
+        ),
+      ),
+    [slabItems, levels, view, cut],
+  );
+  // Estrutura da torre (núcleos, cobertura): um lote só, fora os blocos em silhueta.
+  const structureBatch = useMemo(
+    () =>
+      groupBatches(structureItems, (it) => (isGhost(cut, it.tower) ? null : 'structure')).get(
+        'structure',
+      ),
+    [structureItems, cut],
+  );
+  const clipPlanes = useMemo(() => [materials.planes.top, materials.planes.bottom], [materials]);
+  const onTapStructure = useCallback(
+    (key: string) => {
+      if (towers.has(key)) onTapTower(key);
+    },
+    [towers, onTapTower],
+  );
+
   return (
     <>
       <CameraRig
@@ -639,51 +750,62 @@ function Building({
         </ErrorBoundary>
       )}
       {ghosts && <GhostLayer geometries={ghosts} cut={cut} materials={materials} />}
-      {structure.map(({ part, zone, tower }, i) =>
+      {structure.map(({ part, zone }, i) =>
         zone === 'site' ? (
           <SitePart key={`s${i}`} part={part} material={materials.site} blocking threshold={15} />
-        ) : (
-          <ClippedPart
-            key={`s${i}`}
-            part={part}
-            material={materials.structure}
-            materials={materials}
-            showLower={isFloorMode}
-            ghost={isGhost(cut, tower)}
-            blocking
-            rangeRef={rangeRef}
-            threshold={15}
-            onTap={part.kind === 'tower' && multiTower ? onTapTower : undefined}
-          />
-        ),
+        ) : null,
       )}
-      {model.floors.map((part, i) => (
-        <FloorSlab
-          key={`f${i}`}
-          part={part}
-          view={partView(
-            part.objectKey ? levels.get(part.objectKey) : undefined,
-            towerKeyOf('floor', part.objectKey),
-            view,
-            cut,
-          )}
-          interactive={!isFloorMode}
-          materials={materials}
-          onTap={onTapFloor}
+      {structureBatch && (
+        <Batch
+          signature={`${modelId}|${structureBatch.signature}`}
+          items={structureBatch.items}
+          material={materials.structure}
+          edgeColor={BRAND.musgo}
+          edgeClip={clipPlanes}
+          raycast="clipped"
+          rangeRef={rangeRef}
+          onTap={multiTower ? onTapStructure : undefined}
+          lowerPass={isFloorMode ? materials.lowerClipped : null}
         />
-      ))}
-      {model.units.map((part) => (
-        <UnitMesh
-          key={part.objectKey!}
-          part={part}
-          status={unitStatus[part.objectKey!]}
-          selected={part.objectKey === selectedUnit}
-          filtered={dimmedUnits.has(part.objectKey!)}
-          view={partView(floorOf(part), towerKeyOf('unit', part.objectKey), view, cut)}
+      )}
+      {[...slabBatches].map(([cls, b]) => {
+        const st = slabStyle(cls as SlabClass, materials, !isFloorMode);
+        return (
+          <Batch
+            key={cls}
+            signature={`${modelId}|${b.signature}`}
+            items={b.items}
+            material={st.material}
+            edgeColor={st.edgeColor}
+            raycast={st.raycast}
+            onTap={st.tappable ? onTapFloor : undefined}
+            pointer={st.tappable}
+          />
+        );
+      })}
+      {[...unitBatches].map(([group, b]) => {
+        const st = unitStyle(group.slice(group.indexOf('|') + 1) as UnitClass, materials);
+        return (
+          <Batch
+            key={group}
+            signature={`${modelId}|${b.signature}`}
+            items={b.items}
+            material={st.material}
+            edgeColor={st.edgeColor}
+            raycast={st.raycast}
+            onTap={st.tappable ? onTapUnit : undefined}
+            pointer={st.tappable}
+          />
+        );
+      })}
+      {selectedPart && (
+        <SelectedUnit
+          part={selectedPart}
+          status={unitStatus[selectedPart.objectKey!]!}
           materials={materials}
           onTap={onTapUnit}
         />
-      ))}
+      )}
       {multiTower && towerLabels && effectiveMode === 'building' && (
         <TowerLabels
           towers={towers}
@@ -890,31 +1012,45 @@ function DetailLayer({
     (part.sourceMaterial && flat.get(`${part.sourceMaterial.uuid}|${zone}`)) ||
     (zone === 'site' ? materials.site : materials.structure);
 
+  // Lotes por material do GLB e zona (torre recortada × entorno); blocos em silhueta saem.
+  const items = useMemo(
+    () =>
+      parts.map((p, i) => ({
+        key: `~d${i}`,
+        piece: p,
+        arrays: partArrays(p.part.geometry, p.part.matrix, 30),
+      })),
+    [parts],
+  );
+  const batches = useMemo(
+    () =>
+      groupBatches(items, (it) => {
+        if (it.piece.zone === 'tower' && isGhost(cut, it.piece.tower)) return null;
+        return `${it.piece.zone}|${it.piece.part.sourceMaterial?.uuid ?? ''}`;
+      }),
+    [items, cut],
+  );
+  const clipPlanes = useMemo(() => [materials.planes.top, materials.planes.bottom], [materials]);
+
   return (
     <>
       {ghosts && <GhostLayer geometries={ghosts} cut={cut} materials={materials} />}
-      {parts.map(({ part, zone, tower }, i) =>
-        zone === 'site' ? (
-          <SitePart
-            key={`d${i}`}
-            part={part}
-            material={materialFor(part, zone)}
-            blocking={false}
-            threshold={30}
+      {[...batches].map(([group, b]) => {
+        const tower = group.startsWith('tower|');
+        const first = b.items[0]!.piece;
+        return (
+          <Batch
+            key={group}
+            signature={`${gltf.scene.uuid}|${b.signature}`}
+            items={b.items}
+            material={materialFor(first.part, first.zone)}
+            edgeColor={BRAND.musgo}
+            edgeClip={tower ? clipPlanes : null}
+            raycast="none"
+            lowerPass={tower && showLower ? materials.lowerClipped : null}
           />
-        ) : (
-          <ClippedPart
-            key={`d${i}`}
-            part={part}
-            material={materialFor(part, zone)}
-            materials={materials}
-            showLower={showLower}
-            ghost={isGhost(cut, tower)}
-            blocking={false}
-            threshold={30}
-          />
-        ),
-      )}
+        );
+      })}
     </>
   );
 }
@@ -965,220 +1101,244 @@ function makeClippedRaycast(rangeRef: RangeRef) {
   };
 }
 
-/**
- * Peça sem andar (estrutura do modelo leve ou camada de detalhes). Passada normal recortada
- * na faixa do andar ativo; no modo andar, uma segunda passada esmaecida do que fica abaixo.
- */
-const ClippedPart = memo(function ClippedPart({
-  part,
-  material,
-  materials,
-  showLower,
-  blocking,
-  rangeRef,
-  threshold,
-  onTap,
-  ghost = false,
-}: {
-  part: ScenePart;
+interface BatchStyle {
   material: Material;
-  materials: ViewerMaterials;
-  showLower: boolean;
-  /** Bloco fora do corte (modo andar): some; a silhueta do bloco o substitui. */
-  ghost?: boolean;
-  /** Estrutura tapa o toque nas unidades atrás dela; detalhes não. */
-  blocking: boolean;
-  rangeRef?: RangeRef;
-  threshold: number;
-  /** Toque no núcleo TOWER__ (com 2+ torres): sugere o bloco. */
-  onTap?: (objectKey: string) => void;
-}) {
-  const raycast = useMemo(
-    () => (blocking && rangeRef ? makeClippedRaycast(rangeRef) : noRaycast),
-    [blocking, rangeRef],
-  );
-  const edgePlanes = useMemo(() => [materials.planes.top, materials.planes.bottom], [materials]);
-  return (
-    <>
-      <mesh
-        geometry={part.geometry}
-        matrix={part.matrix}
-        matrixAutoUpdate={false}
-        material={material}
-        visible={!ghost}
-        raycast={ghost ? noRaycast : raycast}
-        onClick={
-          blocking
-            ? (e) => {
-                e.stopPropagation();
-                if (onTap && part.objectKey && e.delta <= TAP_TOLERANCE_PX) onTap(part.objectKey);
-              }
-            : undefined
-        }
-      >
-        <Edges
-          color={BRAND.musgo}
-          lineWidth={1}
-          threshold={threshold}
-          // Repassado ao material da linha: o contorno também é recortado.
-          {...({ clippingPlanes: edgePlanes } as object)}
-        />
-      </mesh>
-      {showLower && !ghost && (
-        <mesh
-          geometry={part.geometry}
-          matrix={part.matrix}
-          matrixAutoUpdate={false}
-          material={materials.lowerClipped}
-          raycast={noRaycast}
-        />
-      )}
-    </>
-  );
-});
-
-/** Laje FLOOR__: no modo edifício, tocar sugere o andar (onSelectFloor). */
-const FloorSlab = memo(function FloorSlab({
-  part,
-  view,
-  interactive,
-  materials,
-  onTap,
-}: {
-  part: ScenePart;
-  view: PartView;
-  interactive: boolean;
-  materials: ViewerMaterials;
-  onTap: (floorKey: string) => void;
-}) {
-  if (view === 'hidden') return null;
-  const lower = view === 'lower';
-  const context = view === 'context';
-  // Silhueta: continua montada (sem recriar contornos ao sair do modo andar), invisível.
-  const ghost = view === 'ghost';
-  return (
-    <mesh
-      geometry={part.geometry}
-      matrix={part.matrix}
-      matrixAutoUpdate={false}
-      material={lower || context ? materials.lower : materials.slab}
-      visible={!ghost}
-      raycast={lower || ghost ? noRaycast : undefined}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (interactive && part.objectKey && e.delta <= TAP_TOLERANCE_PX) onTap(part.objectKey);
-      }}
-      onPointerOver={(e) => {
-        e.stopPropagation();
-        if (interactive) document.body.style.cursor = 'pointer';
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = '';
-      }}
-    >
-      {!lower && (
-        <Edges color={context ? FILTERED_OUTLINE : BRAND.musgo} lineWidth={1} threshold={15} />
-      )}
-    </mesh>
-  );
-});
-
-interface UnitMeshProps {
-  part: ScenePart;
-  /** undefined = unidade do modelo sem status informado: aparece como indisponível e não é selecionável. */
-  status: UnitStatus | undefined;
-  selected: boolean;
-  /** Fora dos filtros: Areia claro, sem cor de status, ainda tocável. */
-  filtered: boolean;
-  view: PartView;
-  materials: ViewerMaterials;
-  onTap: (objectKey: string) => void;
+  /** Cor do contorno; null = sem contorno. */
+  edgeColor: string | null;
+  /** 'none': não recebe toque; 'default': recebe (e tapa o que está atrás). */
+  raycast: 'none' | 'default';
+  /** Toque chama o handler (unidade/laje); senão só tapa. */
+  tappable: boolean;
 }
 
-const UnitMesh = memo(function UnitMesh({
+/** Aparência de um lote de unidades (mesmas regras de antes, por unidade). */
+function unitStyle(cls: UnitClass, materials: ViewerMaterials): BatchStyle {
+  switch (cls) {
+    case 'lower':
+      // Abaixo do andar ativo: silhueta clara, sem contorno, sem toque.
+      return { material: materials.lower, edgeColor: null, raycast: 'none', tappable: false };
+    case 'context':
+      // Outro bloco no modo bloco: contorno suave; tocar troca o bloco.
+      return {
+        material: materials.lower,
+        edgeColor: FILTERED_OUTLINE,
+        raycast: 'default',
+        tappable: true,
+      };
+    case 'filtered':
+      return {
+        material: materials.filtered,
+        edgeColor: FILTERED_OUTLINE,
+        raycast: 'default',
+        tappable: true,
+      };
+    case 'nostatus':
+      // Sem status informado: como indisponível, não selecionável (mas tapa o toque).
+      return {
+        material: materials.status.unavailable,
+        edgeColor: unitAppearance('unavailable', false).outline.color,
+        raycast: 'default',
+        tappable: false,
+      };
+    case 'selected':
+      throw new Error('unidade selecionada não entra em lote');
+    default: {
+      const status = cls.slice('status:'.length) as UnitStatus;
+      return {
+        material: materials.status[status],
+        edgeColor: unitAppearance(status, false).outline.color,
+        raycast: 'default',
+        tappable: true,
+      };
+    }
+  }
+}
+
+/** Aparência de um lote de lajes. `interactive`: fora do modo andar, tocar sugere o andar. */
+function slabStyle(cls: SlabClass, materials: ViewerMaterials, interactive: boolean): BatchStyle {
+  if (cls === 'lower') {
+    return { material: materials.lower, edgeColor: null, raycast: 'none', tappable: false };
+  }
+  return {
+    material: cls === 'context' ? materials.lower : materials.slab,
+    edgeColor: cls === 'context' ? FILTERED_OUTLINE : BRAND.musgo,
+    raycast: 'default',
+    tappable: interactive,
+  };
+}
+
+interface BatchProps {
+  /** Membros do lote (e o modelo): muda → o lote é refeito. */
+  signature: string;
+  items: BatchItem[];
+  material: Material;
+  edgeColor?: string | null;
+  /** Planos de corte do contorno (estrutura e detalhes da torre). */
+  edgeClip?: Plane[] | null;
+  /** 'clipped': ignora o que está fora da faixa do andar (rangeRef), como a estrutura. */
+  raycast?: 'none' | 'default' | 'clipped';
+  rangeRef?: RangeRef;
+  /** Toque numa peça do lote: recebe a chave dela (object_key). */
+  onTap?: (key: string) => void;
+  pointer?: boolean;
+  /** Segunda passada esmaecida (abaixo do andar ativo), com a mesma malha. */
+  lowerPass?: Material | null;
+}
+
+/**
+ * Lote: uma malha e um contorno para várias peças com a mesma aparência. O toque descobre a
+ * peça pelo triângulo atingido (keys[faceIndex]).
+ */
+const Batch = memo(
+  function Batch({
+    signature,
+    items,
+    material,
+    edgeColor = null,
+    edgeClip = null,
+    raycast = 'none',
+    rangeRef,
+    onTap,
+    pointer = false,
+    lowerPass = null,
+  }: BatchProps) {
+    const clippedRaycast = useMemo(
+      () => (rangeRef ? makeClippedRaycast(rangeRef) : undefined),
+      [rangeRef],
+    );
+    // A assinatura cobre os itens (o array muda a cada render; os membros, não).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const merged = useMemo(() => mergeBatch(items), [signature]);
+    useEffect(() => () => merged.geometry.dispose(), [merged]);
+    const blocking = raycast !== 'none';
+    return (
+      <>
+        <mesh
+          geometry={merged.geometry}
+          material={material}
+          raycast={
+            raycast === 'none' ? noRaycast : raycast === 'clipped' ? clippedRaycast : undefined
+          }
+          onClick={
+            blocking
+              ? (e) => {
+                  e.stopPropagation();
+                  const key = e.faceIndex != null ? merged.keys[e.faceIndex] : undefined;
+                  if (onTap && key && !key.startsWith('~') && e.delta <= TAP_TOLERANCE_PX) {
+                    onTap(key);
+                  }
+                }
+              : undefined
+          }
+          onPointerOver={
+            blocking
+              ? (e) => {
+                  e.stopPropagation();
+                  if (pointer) document.body.style.cursor = 'pointer';
+                }
+              : undefined
+          }
+          onPointerOut={
+            blocking
+              ? () => {
+                  document.body.style.cursor = '';
+                }
+              : undefined
+          }
+        />
+        {edgeColor && merged.edges.length > 0 && (
+          <BatchEdges positions={merged.edges} color={edgeColor} clip={edgeClip} />
+        )}
+        {lowerPass && <mesh geometry={merged.geometry} material={lowerPass} raycast={noRaycast} />}
+      </>
+    );
+  },
+  (a, b) =>
+    a.signature === b.signature &&
+    a.material === b.material &&
+    a.edgeColor === b.edgeColor &&
+    a.edgeClip === b.edgeClip &&
+    a.raycast === b.raycast &&
+    a.rangeRef === b.rangeRef &&
+    a.onTap === b.onTap &&
+    a.pointer === b.pointer &&
+    a.lowerPass === b.lowerPass,
+);
+
+/** Contorno de um lote: as mesmas linhas do <Edges> do drei (1 px de tela), num draw call. */
+function BatchEdges({
+  positions,
+  color,
+  clip,
+}: {
+  positions: Float32Array;
+  color: string;
+  clip: Plane[] | null;
+}) {
+  const width = useThree((s) => s.size.width);
+  const height = useThree((s) => s.size.height);
+  const line = useMemo(() => {
+    const geometry = new LineSegmentsGeometry();
+    geometry.setPositions(positions);
+    const material = new LineMaterial();
+    material.color = new Color(color);
+    material.linewidth = 1;
+    if (clip) material.clippingPlanes = clip;
+    const l = new LineSegments2(geometry, material);
+    l.computeLineDistances();
+    l.raycast = noRaycast as unknown as LineSegments2['raycast'];
+    return l;
+  }, [positions, color, clip]);
+  useLayoutEffect(() => {
+    line.material.resolution.set(width, height);
+  }, [line, width, height]);
+  useEffect(
+    () => () => {
+      line.geometry.dispose();
+      line.material.dispose();
+    },
+    [line],
+  );
+  return <primitive object={line} />;
+}
+
+/** Unidade selecionada: fora dos lotes (Latão, contorno grosso, desenhada por cima). */
+const SelectedUnit = memo(function SelectedUnit({
   part,
   status,
-  selected,
-  filtered,
-  view,
   materials,
   onTap,
-}: UnitMeshProps) {
-  if (view === 'hidden') return null;
-  if (view === 'lower') {
-    return (
-      <mesh
-        geometry={part.geometry}
-        matrix={part.matrix}
-        matrixAutoUpdate={false}
-        material={materials.lower}
-        raycast={noRaycast}
-      />
-    );
-  }
-
-  const selectable = status !== undefined;
-  if (view === 'context') {
-    // Outro bloco no modo bloco: silhueta clara, contorno suave; tocar troca o bloco.
-    return (
-      <mesh
-        geometry={part.geometry}
-        matrix={part.matrix}
-        matrixAutoUpdate={false}
-        material={materials.lower}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (part.objectKey && e.delta <= TAP_TOLERANCE_PX) onTap(part.objectKey);
-        }}
-        onPointerOver={(e) => {
-          e.stopPropagation();
-          document.body.style.cursor = 'pointer';
-        }}
-        onPointerOut={() => {
-          document.body.style.cursor = '';
-        }}
-      >
-        <Edges color={FILTERED_OUTLINE} lineWidth={1} threshold={15} />
-      </mesh>
-    );
-  }
-  // Silhueta: continua montada (sem recriar contornos ao sair do modo andar), invisível.
-  const ghost = view === 'ghost';
-  const isSelected = selected && selectable && !ghost;
-  const isFiltered = filtered && !isSelected;
-  const appearance = unitAppearance(status ?? 'unavailable', isSelected);
-  const material = isSelected
-    ? materials.selected
-    : isFiltered
-      ? materials.filtered
-      : materials.status[status ?? 'unavailable'];
-
+}: {
+  part: ScenePart;
+  status: UnitStatus;
+  materials: ViewerMaterials;
+  onTap: (objectKey: string) => void;
+}) {
+  const appearance = unitAppearance(status, true);
   return (
     <mesh
       geometry={part.geometry}
       matrix={part.matrix}
       matrixAutoUpdate={false}
-      material={material}
-      renderOrder={isSelected ? 1 : 0}
-      visible={!ghost}
-      raycast={ghost ? noRaycast : undefined}
+      material={materials.selected}
+      renderOrder={1}
       onClick={(e) => {
         e.stopPropagation();
-        if (selectable && part.objectKey && e.delta <= TAP_TOLERANCE_PX) onTap(part.objectKey);
+        if (part.objectKey && e.delta <= TAP_TOLERANCE_PX) onTap(part.objectKey);
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
-        if (selectable) document.body.style.cursor = 'pointer';
+        document.body.style.cursor = 'pointer';
       }}
       onPointerOut={() => {
         document.body.style.cursor = '';
       }}
     >
       <Edges
-        color={isFiltered ? FILTERED_OUTLINE : appearance.outline.color}
+        color={appearance.outline.color}
         lineWidth={appearance.outline.width}
         threshold={15}
-        renderOrder={isSelected ? 2 : 0}
+        renderOrder={2}
       />
     </mesh>
   );

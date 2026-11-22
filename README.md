@@ -262,6 +262,22 @@ máquina): +0,9% na média. Draw calls (`?debug=1`): vista geral dos 20 blocos 9
 unidade e laje com seu contorno), modo bloco 208, modo andar 65; Vista 140. Com CPU 4×, o
 fps da vista geral oscilou com a carga da máquina (25–34); no modo bloco, 40–56.
 
+**Desenho em lotes (Bloco M, etapa 5).** Unidades com a mesma aparência no mesmo bloco viram
+uma malha só, com um contorno só; lajes, estrutura e detalhes, por aparência. A seleção
+continua por unidade (o triângulo tocado diz a unidade), e a mudança de status refaz só os
+lotes envolvidos (21–42 ms até o quadro seguinte, com CPU 4×). A/B alternado contra o build
+anterior, mesmo banco e mesma máquina, mediana de 3:
+
+| Medida                               | Antes                     | Depois                    |
+| ------------------------------------ | ------------------------- | ------------------------- |
+| Draw calls, 20 blocos: vista geral   | 970                       | 196                       |
+| Draw calls, 20 blocos: bloco / andar | 208 / 65                  | 36 / 39                   |
+| Draw calls, Vista: prédio / 8º andar | 140 / 94                  | 38 / 41                   |
+| fps vista geral, 20 blocos, CPU 4×   | 16–17                     | 45–53                     |
+| Interativo, 20 blocos (CPU 4×)       | 1,90–1,92 s (3,98–4,08 s) | 1,85 s (3,25–3,54 s)      |
+| Interativo, Vista (CPU 4×)           | 1,70–1,72 s (2,86–2,89 s) | 1,72–1,75 s (2,77–2,80 s) |
+| fps Vista, CPU 4×                    | 58–59                     | 60                        |
+
 **fps no celular:** abra a demo com `?debug=1` (ex.: `http://<IP>:3000/e/residencial-vista?debug=1`).
 Aparece um contador com fps, média e mínimo enquanto o prédio gira, tempos até interativo e
 detalhes, draw calls, triângulos e a GPU. O viewer só desenha quando algo muda: gire com o

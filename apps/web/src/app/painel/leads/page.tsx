@@ -30,7 +30,9 @@ export default async function LeadsPage({ searchParams }: PageProps) {
       .order('created_at', { ascending: false })
       .limit(LEADS_LIMIT),
     supabase.from('developments').select('id, organization_id, name, slug, status').order('name'),
-    supabase.from('units').select('id, development_id, code, towers(code, name, sort_order)'),
+    supabase
+      .from('units')
+      .select('id, development_id, code, towers(code, name, sort_order), floors(number, label)'),
     supabase.from('organization_members').select('organization_id, user_id, role'),
     supabase.from('profiles').select('id, full_name'),
     supabase
@@ -66,6 +68,7 @@ export default async function LeadsPage({ searchParams }: PageProps) {
       development_id: string;
       code: string;
       towers: { code: string; name: string; sort_order: number } | null;
+      floors: { number: number; label: string | null } | null;
     }[],
   );
 
@@ -97,7 +100,8 @@ export default async function LeadsPage({ searchParams }: PageProps) {
 
 /**
  * Unidades do painel: bloco só em empreendimento com vários blocos, código do link da
- * página pública (mesma regra de lá) e ordem bloco → código.
+ * página pública (mesma regra de lá) e ordem bloco (sort_order) → andar → código, a mesma
+ * do /painel/dev-status.
  */
 function toBoardUnits(
   rows: {
@@ -105,11 +109,12 @@ function toBoardUnits(
     development_id: string;
     code: string;
     towers: { code: string; name: string; sort_order: number } | null;
+    floors: { number: number; label: string | null } | null;
   }[],
 ): BoardUnit[] {
   const byDev = new Map<string, typeof rows>();
   for (const r of rows) byDev.set(r.development_id, [...(byDev.get(r.development_id) ?? []), r]);
-  const out: (BoardUnit & { order: number; tower: string })[] = [];
+  const out: (BoardUnit & { order: number; tower: string; floor: number })[] = [];
   for (const list of byDev.values()) {
     const many = new Set(list.map((r) => r.towers?.code)).size > 1;
     const links = linkCodes(
@@ -122,8 +127,10 @@ function toBoardUnits(
         code: r.code,
         linkCode: links.get(r.id)!,
         towerName: many ? (r.towers?.name ?? null) : null,
+        floorText: r.floors ? (r.floors.label ?? `${r.floors.number}º andar`) : null,
         order: r.towers?.sort_order ?? 0,
         tower: r.towers?.code ?? '',
+        floor: r.floors?.number ?? 0,
       });
     }
   }
@@ -132,7 +139,8 @@ function toBoardUnits(
       (a, b) =>
         a.order - b.order ||
         a.tower.localeCompare(b.tower) ||
+        a.floor - b.floor ||
         a.code.localeCompare(b.code, 'pt-BR', { numeric: true }),
     )
-    .map(({ order: _order, tower: _tower, ...u }) => u);
+    .map(({ order: _order, tower: _tower, floor: _floor, ...u }) => u);
 }

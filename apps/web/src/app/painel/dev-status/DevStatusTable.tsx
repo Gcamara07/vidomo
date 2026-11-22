@@ -1,24 +1,25 @@
 'use client';
 import { STATUS_LABELS } from '@vidomo/viewer/styles';
 import { UNIT_STATUSES, type UnitStatus } from '@vidomo/viewer/types';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { StatusSwatch } from '@/components/public/StatusLegend';
+import {
+  defaultFilters,
+  developmentOptions,
+  filterUnits,
+  floorColumn,
+  floorOptions,
+  groupByTower,
+  groupTitle,
+  manyTowers,
+  towerColumn,
+  towerOptions,
+  type DevStatusFilters,
+  type DevStatusUnit,
+} from '@/lib/panel/dev-status';
 import { isUnitStatus } from '@/lib/public-development';
 import { browserClient } from '@/lib/supabase/browser';
 import styles from '../painel.module.css';
-
-export interface DevStatusUnit {
-  id: string;
-  code: string;
-  objectKey: string;
-  status: UnitStatus;
-  updatedAt: string;
-  floor: number | null;
-  typeName: string | null;
-  development: string;
-  developmentSlug: string;
-  published: boolean;
-}
 
 type RowState = { pending?: boolean; error?: string; flash?: boolean };
 
@@ -28,6 +29,10 @@ export function DevStatusTable({ initialUnits }: { initialUnits: DevStatusUnit[]
   const [units, setUnits] = useState(initialUnits);
   const [rowState, setRowState] = useState<Record<string, RowState>>({});
   const [reason, setReason] = useState('');
+  // Abre filtrada pelo primeiro empreendimento (não todos juntos).
+  const [filters, setFilters] = useState<DevStatusFilters>(() => defaultFilters(initialUnits));
+  /** Blocos recolhidos (código). */
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
 
   const patchRow = (id: string, patch: RowState) =>
     setRowState((s) => ({ ...s, [id]: { ...s[id], ...patch } }));
@@ -94,19 +99,132 @@ export function DevStatusTable({ initialUnits }: { initialUnits: DevStatusUnit[]
     setTimeout(() => patchRow(unit.id, { flash: false }), 1200);
   }
 
-  const developments = useMemo(() => {
-    const map = new Map<string, { name: string; slug: string; published: boolean }>();
-    for (const u of units)
-      map.set(u.developmentSlug, {
-        name: u.development,
-        slug: u.developmentSlug,
-        published: u.published,
-      });
-    return [...map.values()];
-  }, [units]);
+  const developments = useMemo(() => developmentOptions(units), [units]);
+  const towers = useMemo(
+    () => towerOptions(units, filters.development),
+    [units, filters.development],
+  );
+  const floors = useMemo(
+    () => floorOptions(units, filters.development, filters.tower),
+    [units, filters.development, filters.tower],
+  );
+  const many = useMemo(() => manyTowers(units, filters.development), [units, filters.development]);
+  const visible = useMemo(() => filterUnits(units, filters), [units, filters]);
+  const groups = useMemo(() => groupByTower(visible), [visible]);
+  const current = developments.find((d) => d.slug === filters.development);
+  const set = (patch: Partial<DevStatusFilters>) => setFilters((f) => ({ ...f, ...patch }));
+  const toggle = (code: string) =>
+    setCollapsed((s) => {
+      const next = new Set(s);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  const columns = many ? 6 : 5;
+
+  const row = (u: DevStatusUnit) => {
+    const st = rowState[u.id] ?? {};
+    return (
+      <tr key={u.id} data-flash={st.flash || undefined}>
+        <td>
+          <span className={styles.mono}>{u.code}</span>
+        </td>
+        {many && <td>{towerColumn(u)}</td>}
+        <td className={styles.mono}>{floorColumn(u)}</td>
+        <td>{u.typeName ?? '—'}</td>
+        <td>
+          <span className={styles.statusCell}>
+            <StatusSwatch status={u.status} />
+            <select
+              aria-label={`Status da unidade ${u.code}${many ? ` do ${u.towerName}` : ''}`}
+              value={u.status}
+              disabled={st.pending}
+              onChange={(e) => changeStatus(u, e.target.value as UnitStatus)}
+            >
+              {UNIT_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {STATUS_LABELS[s]}
+                </option>
+              ))}
+            </select>
+            {st.pending && <span className={styles.muted}>salvando…</span>}
+          </span>
+          {st.error && (
+            <span className={styles.error} role="alert">
+              {st.error}
+            </span>
+          )}
+        </td>
+        <td className={`${styles.mono} ${styles.muted}`}>{time.format(new Date(u.updatedAt))}</td>
+      </tr>
+    );
+  };
 
   return (
     <>
+      <div className={styles.toolbar} role="search" aria-label="Filtrar unidades">
+        <label className={styles.field}>
+          <span>Empreendimento</span>
+          <select
+            value={filters.development}
+            onChange={(e) => set({ development: e.target.value, tower: '', floor: null })}
+          >
+            {developments.map((d) => (
+              <option key={d.slug} value={d.slug}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {many && (
+          <label className={styles.field}>
+            <span>Bloco</span>
+            <select
+              value={filters.tower}
+              onChange={(e) => set({ tower: e.target.value, floor: null })}
+            >
+              <option value="">Todos</option>
+              {towers.map((t) => (
+                <option key={t.code} value={t.code}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className={styles.field}>
+          <span>Andar</span>
+          <select
+            value={filters.floor ?? ''}
+            onChange={(e) => set({ floor: e.target.value === '' ? null : Number(e.target.value) })}
+          >
+            <option value="">Todos</option>
+            {floors.map((f) => (
+              <option key={f.number} value={f.number}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span>Status</span>
+          <select
+            value={filters.status}
+            onChange={(e) => set({ status: e.target.value as UnitStatus | '' })}
+          >
+            <option value="">Todos</option>
+            {UNIT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABELS[s]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className={styles.muted} aria-live="polite">
+          {visible.length} {visible.length === 1 ? 'unidade' : 'unidades'}
+        </span>
+      </div>
+
       <div className={styles.toolbar}>
         <label className={styles.field}>
           <span>Motivo (vai para o histórico)</span>
@@ -117,79 +235,64 @@ export function DevStatusTable({ initialUnits }: { initialUnits: DevStatusUnit[]
             maxLength={200}
           />
         </label>
-        {developments.map((d) =>
-          d.published ? (
+        {current &&
+          (current.published ? (
             <a
-              key={d.slug}
-              href={`/e/${d.slug}`}
+              href={`/e/${current.slug}`}
               target="_blank"
               rel="noreferrer"
               className={styles.secondary}
             >
-              Abrir demo: {d.name} ↗
+              Abrir demo: {current.name} ↗
             </a>
           ) : (
-            <span key={d.slug} className={styles.muted}>
-              {d.name} (rascunho, sem página pública)
-            </span>
-          ),
-        )}
+            <span className={styles.muted}>{current.name} (rascunho, sem página pública)</span>
+          ))}
       </div>
 
       <table className={styles.table}>
         <thead>
           <tr>
             <th>Unidade</th>
+            {many && <th>Bloco</th>}
             <th>Andar</th>
             <th>Planta</th>
             <th>Status</th>
             <th>Atualizado</th>
           </tr>
         </thead>
-        <tbody>
-          {units.map((u) => {
-            const st = rowState[u.id] ?? {};
+        {many ? (
+          groups.map((g) => {
+            const open = !collapsed.has(g.code);
+            const bodyId = `bloco-${g.code}`;
             return (
-              <tr key={u.id} data-flash={st.flash || undefined}>
-                <td>
-                  <span className={styles.mono}>{u.code}</span>
-                  {developments.length > 1 && (
-                    <span className={styles.muted}> · {u.development}</span>
-                  )}
-                </td>
-                <td className={styles.mono}>{u.floor ?? '—'}</td>
-                <td>{u.typeName ?? '—'}</td>
-                <td>
-                  <span className={styles.statusCell}>
-                    <StatusSwatch status={u.status} />
-                    <select
-                      aria-label={`Status da unidade ${u.code}`}
-                      value={u.status}
-                      disabled={st.pending}
-                      onChange={(e) => changeStatus(u, e.target.value as UnitStatus)}
-                    >
-                      {UNIT_STATUSES.map((s) => (
-                        <option key={s} value={s}>
-                          {STATUS_LABELS[s]}
-                        </option>
-                      ))}
-                    </select>
-                    {st.pending && <span className={styles.muted}>salvando…</span>}
-                  </span>
-                  {st.error && (
-                    <span className={styles.error} role="alert">
-                      {st.error}
-                    </span>
-                  )}
-                </td>
-                <td className={`${styles.mono} ${styles.muted}`}>
-                  {time.format(new Date(u.updatedAt))}
-                </td>
-              </tr>
+              <Fragment key={g.code}>
+                <tbody>
+                  <tr className={styles.groupRow}>
+                    <th colSpan={columns} scope="rowgroup">
+                      <button
+                        type="button"
+                        className={styles.groupToggle}
+                        aria-expanded={open}
+                        aria-controls={bodyId}
+                        onClick={() => toggle(g.code)}
+                      >
+                        <span aria-hidden>{open ? '▾' : '▸'}</span> {groupTitle(g)}
+                      </button>
+                    </th>
+                  </tr>
+                </tbody>
+                <tbody id={bodyId} hidden={!open}>
+                  {g.units.map(row)}
+                </tbody>
+              </Fragment>
             );
-          })}
-        </tbody>
+          })
+        ) : (
+          <tbody>{visible.map(row)}</tbody>
+        )}
       </table>
+      {visible.length === 0 && <p className={styles.muted}>Nenhuma unidade com esses filtros.</p>}
     </>
   );
 }

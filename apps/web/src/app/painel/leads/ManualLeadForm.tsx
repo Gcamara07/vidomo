@@ -33,6 +33,13 @@ export function ManualLeadForm({
   const [pending, setPending] = useState(false);
 
   const devUnits = units.filter((u) => u.developmentId === developmentId);
+  // Já vêm na ordem bloco → andar → unidade; agrupa por bloco (consecutivos).
+  const groupedUnits: [string | null, BoardUnit[]][] = [];
+  for (const u of devUnits) {
+    const last = groupedUnits.at(-1);
+    if (last && last[0] === u.towerName) last[1].push(u);
+    else groupedUnits.push([u.towerName, [u]]);
+  }
   const set = <K extends keyof ManualLeadInput>(k: K, v: ManualLeadInput[K]) => {
     setInput((i) => ({ ...i, [k]: v }));
     if (problem?.field === k) setProblem(null);
@@ -93,11 +100,24 @@ export function ManualLeadForm({
           <span>Unidade (opcional)</span>
           <select value={unitId} onChange={(e) => setUnitId(e.target.value)}>
             <option value="">Sem unidade</option>
-            {devUnits.map((u) => (
-              <option key={u.id} value={u.id}>
-                {boardUnitLabel(u)}
-              </option>
-            ))}
+            {groupedUnits.map(([tower, list]) =>
+              tower ? (
+                // Vários blocos: um grupo por bloco, na ordem do cadastro.
+                <optgroup key={tower} label={tower}>
+                  {list.map((u) => (
+                    <option key={u.id} value={u.id} label={`${u.code} · ${u.floorText ?? ''}`}>
+                      {boardUnitLabel(u)}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : (
+                list.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {boardUnitLabel(u)}
+                  </option>
+                ))
+              ),
+            )}
           </select>
         </label>
         <ManualField id="name" label="Nome" error={errorOf('name')}>

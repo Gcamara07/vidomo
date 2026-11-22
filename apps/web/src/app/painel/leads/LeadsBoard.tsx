@@ -41,6 +41,8 @@ export interface BoardUnit {
   linkCode: string;
   /** Bloco, só em empreendimento com vários blocos ("Bloco 09"); null com um só. */
   towerName: string | null;
+  /** "Térreo" ou "2º andar"; null sem andar. */
+  floorText: string | null;
 }
 
 /** "201 · Bloco 09" (com um bloco só, "802"). */

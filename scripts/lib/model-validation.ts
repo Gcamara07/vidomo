@@ -8,7 +8,7 @@
  *   detail  GLB de detalhes opcional, só visual (fachada, varandas, entorno). Não deve ter
  *           unidades — a seleção vem sempre do modelo leve.
  */
-import { parseObjectName } from '@vidomo/viewer/naming';
+import { parseFloorKey, parseObjectName, parseUnitKey } from '@vidomo/viewer/naming';
 
 /** Limite do CLAUDE.md: cena do edifício até 10 MB comprimida. */
 export const MAX_MODEL_BYTES = 10 * 1024 * 1024;
@@ -20,6 +20,23 @@ export type ModelLayer = 'base' | 'detail';
 export interface DbKeys {
   unitKeys: string[];
   floorKeys: string[];
+}
+
+/** Diferenças de um bloco (torre) entre o GLB e o banco. */
+export interface TowerReport {
+  tower: string;
+  unitObjects: number;
+  dbUnits: number;
+  floorObjects: number;
+  dbFloors: number;
+  unitsWithoutObject: string[];
+  objectsWithoutUnit: string[];
+  floorsWithoutObject: string[];
+  objectsWithoutFloor: string[];
+  /** Bloco só no GLB ou só no banco. */
+  missingIn: 'model' | 'db' | null;
+  /** Sem unidade faltando ou sobrando (andares divergentes são aviso). */
+  ok: boolean;
 }
 
 export interface ModelReport {
@@ -45,7 +62,55 @@ export interface ModelReport {
   overBaseBudget: boolean;
   /** Avisos que não bloqueiam. */
   warnings: string[];
+  /** Por bloco, em ordem de código (camada base). */
+  towers: TowerReport[];
   ok: boolean;
+}
+
+const towerOfKey = (key: string) => parseUnitKey(key)?.tower ?? parseFloorKey(key)?.tower ?? null;
+
+/** Agrupa as listas da comparação por bloco (o código vem do object_key). */
+export function compareByTower(
+  unitObjects: Iterable<string>,
+  floorObjects: Iterable<string>,
+  db: DbKeys,
+): TowerReport[] {
+  const sets = {
+    unitObjects: new Set(unitObjects),
+    floorObjects: new Set(floorObjects),
+    dbUnits: new Set(db.unitKeys),
+    dbFloors: new Set(db.floorKeys),
+  };
+  const towers = new Set<string>();
+  for (const set of Object.values(sets)) {
+    for (const k of set) {
+      const t = towerOfKey(k);
+      if (t) towers.add(t);
+    }
+  }
+  const of = (set: Set<string>, tower: string) => [...set].filter((k) => towerOfKey(k) === tower);
+  return [...towers].sort().map((tower) => {
+    const uo = of(sets.unitObjects, tower);
+    const fo = of(sets.floorObjects, tower);
+    const du = of(sets.dbUnits, tower);
+    const df = of(sets.dbFloors, tower);
+    const r = {
+      tower,
+      unitObjects: uo.length,
+      dbUnits: du.length,
+      floorObjects: fo.length,
+      dbFloors: df.length,
+      unitsWithoutObject: sorted(du.filter((k) => !sets.unitObjects.has(k))),
+      objectsWithoutUnit: sorted(uo.filter((k) => !sets.dbUnits.has(k))),
+      floorsWithoutObject: sorted(df.filter((k) => !sets.floorObjects.has(k))),
+      objectsWithoutFloor: sorted(fo.filter((k) => !sets.dbFloors.has(k))),
+      missingIn: uo.length + fo.length === 0 ? 'model' : du.length + df.length === 0 ? 'db' : null,
+    } satisfies Omit<TowerReport, 'ok'>;
+    return {
+      ...r,
+      ok: r.unitsWithoutObject.length === 0 && r.objectsWithoutUnit.length === 0,
+    };
+  });
 }
 
 const sorted = (xs: Iterable<string>) => [...xs].sort();
@@ -121,6 +186,7 @@ export function compareModel(
     overSizeLimit: fileBytes > MAX_MODEL_BYTES,
     overBaseBudget,
     warnings,
+    towers: isBase ? compareByTower(unitObjs.keys(), floorObjs.keys(), db) : [],
   };
 
   return {

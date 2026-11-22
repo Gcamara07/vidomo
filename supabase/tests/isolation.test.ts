@@ -271,6 +271,7 @@ describe('comprador anônimo', () => {
           'bedrooms',
           'code',
           'facade',
+          'floor_label',
           'floor_number',
           'frontage',
           'object_key',
@@ -280,6 +281,9 @@ describe('comprador anônimo', () => {
           'status',
           'suites',
           'tower_code',
+          'tower_name',
+          'tower_short_name',
+          'tower_sort_order',
           'unit_type_name',
         ].sort(),
       );

@@ -9,7 +9,9 @@
  *   pnpm test:remote
  *
  * Os testes que criam e apagam dados (isolamento entre organizações, histórico) ficam
- * só no ambiente local (pnpm test:db).
+ * só no ambiente local (pnpm test:db). Os que deixam dados permanentes (ex.: a org C de
+ * supabase/tests/towers.test.ts) nunca entram aqui: esta pasta só tem testes que leem ou
+ * que restauram o que mudam.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -61,6 +63,7 @@ describe('leitura anônima pela função pública', () => {
           'bedrooms',
           'code',
           'facade',
+          'floor_label',
           'floor_number',
           'frontage',
           'object_key',
@@ -70,6 +73,10 @@ describe('leitura anônima pela função pública', () => {
           'status',
           'suites',
           'tower_code',
+          // Bloco M (migration 20261122000100): o remoto precisa dela antes do deploy do front.
+          'tower_name',
+          'tower_short_name',
+          'tower_sort_order',
           'unit_type_name',
         ].sort(),
       );

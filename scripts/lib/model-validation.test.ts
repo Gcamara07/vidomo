@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BASE_MODEL_BUDGET_BYTES, MAX_MODEL_BYTES, compareModel } from './model-validation';
+import {
+  BASE_MODEL_BUDGET_BYTES,
+  MAX_MODEL_BYTES,
+  compareByTower,
+  compareModel,
+} from './model-validation';
 
 const db = {
   unitKeys: ['TA__F01__U101', 'TA__F01__U102', 'TA__F02__U201'],
@@ -94,5 +99,58 @@ describe('compareModel', () => {
     const names = db.unitKeys.map((k) => `UNIT__${k}`);
     expect(compareModel(names, db, MAX_MODEL_BYTES).ok).toBe(true);
     expect(compareModel(names, db, MAX_MODEL_BYTES + 1).overSizeLimit).toBe(true);
+  });
+});
+
+describe('compareByTower (vários blocos)', () => {
+  const multi = {
+    unitKeys: ['B01__F01__U101', 'B01__F02__U201', 'B02__F01__U101', 'B02__F02__U201'],
+    floorKeys: ['B01__F01', 'B01__F02', 'B02__F01', 'B02__F02'],
+  };
+
+  it('agrupa as diferenças por bloco', () => {
+    const r = compareModel(
+      [
+        'TOWER__B01',
+        'FLOOR__B01__F01',
+        'FLOOR__B01__F02',
+        'UNIT__B01__F01__U101',
+        'UNIT__B01__F02__U201',
+        'FLOOR__B02__F01',
+        'UNIT__B02__F01__U101',
+        'UNIT__B02__F01__U102',
+        'UNIT__B03__F01__U101',
+      ],
+      multi,
+      1000,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.towers.map((t) => [t.tower, t.ok, t.missingIn])).toEqual([
+      ['B01', true, null],
+      ['B02', false, null],
+      ['B03', false, 'db'],
+    ]);
+    const b02 = r.towers[1]!;
+    expect(b02).toMatchObject({ unitObjects: 2, dbUnits: 2, floorObjects: 1, dbFloors: 2 });
+    expect(b02.unitsWithoutObject).toEqual(['B02__F02__U201']);
+    expect(b02.objectsWithoutUnit).toEqual(['B02__F01__U102']);
+    expect(b02.floorsWithoutObject).toEqual(['B02__F02']);
+  });
+
+  it('bloco só no banco', () => {
+    const t = compareByTower([], [], multi);
+    expect(t.map((x) => [x.tower, x.missingIn, x.ok])).toEqual([
+      ['B01', 'model', false],
+      ['B02', 'model', false],
+    ]);
+  });
+
+  it('uma torre só continua com um item (o resumo por bloco só aparece com 2+)', () => {
+    const r = compareModel(
+      db.unitKeys.map((k) => `UNIT__${k}`),
+      db,
+      1000,
+    );
+    expect(r.towers.map((t) => t.tower)).toEqual(['TA']);
   });
 });

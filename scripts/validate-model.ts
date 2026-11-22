@@ -19,7 +19,7 @@ import {
   type ModelLayer,
 } from './lib/model-validation';
 import { developmentKeys, serviceClient } from './lib/supabase-env';
-import { classifyObjects, zoneContextOf } from './lib/zones';
+import { classifyObjects, towerPairsOf, zoneContextOf } from './lib/zones';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -54,9 +54,11 @@ async function main() {
   // Torre × entorno (como o viewer classifica no modo andar).
   const baseDoc = layer === 'base' ? doc : await io.read(resolve(values.base!));
   const zones = classifyObjects(doc, zoneContextOf(baseDoc));
+  // Blocos colados (recortados juntos no modo andar), pela geometria das lajes e núcleos.
+  const pairs = towerPairsOf(baseDoc);
 
   if (values.json) {
-    console.log(JSON.stringify({ file, slug: values.slug, ...report, zones }, null, 2));
+    console.log(JSON.stringify({ file, slug: values.slug, ...report, zones, pairs }, null, 2));
   } else {
     const list = (title: string, xs: string[], blocking = true) => {
       const mark = xs.length === 0 ? 'ok' : blocking ? 'ERRO' : 'aviso';
@@ -79,6 +81,39 @@ async function main() {
     list('Andares sem objeto', report.floorsWithoutObject, false);
     list('Objetos de andar sem cadastro', report.objectsWithoutFloor, false);
     list('Objetos sem prefixo', report.unprefixedNames, false);
+    // Vários blocos: resumo por bloco, com as diferenças de cada um.
+    if (report.towers.length > 1) {
+      const bad = report.towers.filter((t) => !t.ok || t.missingIn);
+      console.log(
+        `  [${bad.length ? 'ERRO' : 'ok'}] Blocos: ${report.towers.length}` +
+          (bad.length ? ` (${bad.length} com diferenças)` : ', todos iguais ao banco'),
+      );
+      for (const t of report.towers) {
+        const where =
+          t.missingIn === 'model'
+            ? ' — só no banco'
+            : t.missingIn === 'db'
+              ? ' — só no modelo'
+              : '';
+        const mark = t.ok && !t.missingIn ? 'ok' : 'ERRO';
+        console.log(
+          `         ${t.tower.padEnd(6)} ${t.unitObjects}/${t.dbUnits} unidades · ` +
+            `${t.floorObjects}/${t.dbFloors} andares (modelo/banco)  ${mark}${where}`,
+        );
+        const diffs: [string, string[]][] = [
+          ['unidades sem objeto', t.unitsWithoutObject],
+          ['objetos sem unidade', t.objectsWithoutUnit],
+          ['andares sem objeto', t.floorsWithoutObject],
+          ['objetos de andar sem cadastro', t.objectsWithoutFloor],
+        ];
+        for (const [title, xs] of diffs) {
+          if (xs.length)
+            console.log(
+              `             ${title}: ${xs.slice(0, 8).join(', ')}${xs.length > 8 ? ` … +${xs.length - 8}` : ''}`,
+            );
+        }
+      }
+    }
     if (report.amenities.length)
       console.log(
         `  [info] Áreas comuns (só visuais por enquanto): ${report.amenities.join(', ')}`,
@@ -94,6 +129,11 @@ async function main() {
     for (const w of report.warnings) console.log(`  [aviso] ${w}`);
     console.log(`  [info] Torre (recortada por andar): ${zones.tower.join(', ') || '—'}`);
     console.log(`  [info] Entorno (sempre visível): ${zones.site.join(', ') || '—'}`);
+    if (report.towers.length > 1) {
+      console.log(
+        `  [info] Blocos colados (recortados juntos no modo andar): ${pairs.join(', ') || 'nenhum'}`,
+      );
+    }
     console.log(
       report.ok
         ? `Resultado: modelo compatível${report.warnings.length ? ' (com avisos)' : ''}.`

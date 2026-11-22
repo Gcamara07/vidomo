@@ -23,6 +23,7 @@
     "model:generate": "tsx scripts/generate-test-building.ts",
     "model:validate": "tsx scripts/validate-model.ts",
     "model:upload": "tsx scripts/upload-model.ts",
+    "model:seed": "tsx scripts/seed-from-model.ts",
     "measure": "tsx scripts/measure-demo.ts",
     "model:compress": "tsx scripts/compress-model.ts",
     "demo:admin": "tsx scripts/demo-admin.ts",

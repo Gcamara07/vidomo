@@ -593,6 +593,17 @@ dentro da meta do PRD (até 5 s em 4G num aparelho de entrada).
 feita logo depois do deploy deu 1,94 s; minutos depois, voltou à faixa acima. JS inicial da
 página: 151,7 KB gzip (era 146,9 KB); viewer/three.js: 288,1 KB. `pnpm test:remote`: 28 de 28.
 
+**Bloco 3 (interiores e fachada v2), 23/11/2026, 4G rápido, mediana de 9:** prédio
+interativo em **1,74 s** no site publicado (variação de 1,56 a 1,97 s), detalhes em 2,68 s,
+60 fps; com CPU 4× mais lenta, 2,09 s. Contra o Bloco M: 1,58 s, 2,07 s e 2,04 s. A camada
+leve passou de 18 KB para 118 KB (fachada com janelas e `VIDRO__`, aceito até +10 % na etapa
+1b); no build local, a diferença do bloco inteiro foi de +3 % (1,72 → 1,77 s). Maquetes na
+1ª entrada num andar: 0,81 s (CPU 4×: 0,96 s); troca de andar: 0,56 s, maquetes em 0,04 s;
+"Ver apartamento" aberto: 0,85 s (CPU 4×: 1,46 s); fps no andar e no apartamento: 60. GLBs:
+maquetes 210 KB, apartamento 552 KB. JS inicial da página: 153,3 KB gzip; viewer/three.js:
+295,8 KB. `pnpm test:remote`: 30 de 30. **Nova referência do prédio interativo publicado:
+1,74 s** (4G rápido, mediana de 9); as próximas medições comparam com ela.
+
 No build local (`next start`, porta 3100) o Bloco 2 mede 1,66 s contra 1,53 s da referência
 (`0b948ff`) medida no mesmo momento. A diferença vem do HTTP/1.1 local: a página passou a
 ter 15 pedidos antes do three.js (eram 12) e, com no máximo 6 conexões por domínio, o

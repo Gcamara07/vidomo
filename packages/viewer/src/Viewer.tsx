@@ -197,6 +197,11 @@ export interface ViewerProps {
   onDetailReady?: () => void;
   /** Falha no modelo de detalhes: o prédio segue funcionando só com o modelo leve. */
   onDetailError?: (error: Error) => void;
+  /**
+   * Maquetes do andar ativo carregadas e entrando na tela (início da transição caixa →
+   * maquete), com o object_key do andar. Para medição.
+   */
+  onInteriorsReady?: (floorKey: string) => void;
   /** Estatísticas de renderização a cada 1 s (para depuração/medição). */
   onStats?: (stats: ViewerStats) => void;
   /** Gira a câmera sozinho (útil para medir fps no aparelho). */
@@ -247,6 +252,7 @@ export function Viewer({
   onError,
   onDetailReady,
   onDetailError,
+  onInteriorsReady,
   onStats,
   autoRotate = false,
   insets,
@@ -304,6 +310,7 @@ export function Viewer({
               onReady={onReady}
               onDetailReady={onDetailReady}
               onDetailError={onDetailError}
+              onInteriorsReady={onInteriorsReady}
               autoRotate={autoRotate}
               insets={insetsKey}
             />
@@ -339,6 +346,7 @@ interface BuildingProps {
   onReady?: () => void;
   onDetailReady?: () => void;
   onDetailError?: (error: Error) => void;
+  onInteriorsReady?: (floorKey: string) => void;
   autoRotate: boolean;
   /** "top,right,bottom,left" em px. */
   insets: string;
@@ -420,6 +428,7 @@ function Building({
   onReady,
   onDetailReady,
   onDetailError,
+  onInteriorsReady,
   autoRotate,
   insets,
 }: BuildingProps) {
@@ -829,6 +838,10 @@ function Building({
   const interiorGroup = useRef<Group>(null);
   const boxGroup = useRef<Group>(null);
   const morph = useRef({ p: 0, start: 0, key: '' });
+  const onInteriorsReadyRef = useRef(onInteriorsReady);
+  useLayoutEffect(() => {
+    onInteriorsReadyRef.current = onInteriorsReady;
+  });
   const morphBase = shownInteriors[0]?.rect.base ?? 0;
   // Detalhes da torre (fachada, varandas): rente à laje quando todas as unidades do andar
   // têm maquete (ela traz a própria varanda e o guarda-corpo); senão, como o resto.
@@ -852,6 +865,7 @@ function Building({
     const key = shownInteriors.length ? `${active?.key ?? ''}|${shownInteriors.length}` : '';
     if (key !== morph.current.key) {
       morph.current = { p: key && prefersReducedMotion() ? 1 : 0, start: performance.now(), key };
+      if (key && active) onInteriorsReadyRef.current?.(active.key);
     }
     applyMorph();
     invalidate();

@@ -178,6 +178,67 @@ pnpm model:upload scripts/out/<leve>.glb --slug <slug>
 vários blocos com imagens de terceiros, que nunca vai para o remoto nem para a Vercel). Sem
 a pasta, o `db reset` só avisa "no files matched pattern" e segue.
 
+### Interiores (maquetes e "Ver apartamento")
+
+Cada tipo de planta pode ter um interior em maquete: no modo andar, as unidades do andar
+ativo trocam a caixa colorida por ele; na ficha, "Ver apartamento" abre a versão detalhada,
+girando, com as etiquetas dos cômodos. Tipo sem interior continua como antes.
+
+**Como modelar (Blender)**
+
+- Modele sobre uma **unidade de referência** do prédio (ex.: a `U201` para o Tipo A), nas
+  coordenadas do próprio prédio: Z para cima, norte em +Y. `z = 0` é o piso acabado (topo da
+  laje `FLOOR__`). Não precisa modelar as outras unidades do tipo: o viewer encaixa sozinho.
+- Paredes **cortadas a 1,4 m**, com o topo (corte) em Nanquim. A varanda entra no interior
+  (com guarda-corpo igual ao do prédio).
+- Um objeto por material: `VIS__INT<tipo>_<MATERIAL>` (ex.: `VIS__INTA_PAREDE`,
+  `VIS__INTA_CORTE`, `VIS__INTA_MADEIRA`). Papéis:
+  - `…_PISO`, `…_MADEIRA_PISO`, `…_MOLHADO`: pisos, tingidos pelo status no modo andar (com
+    hachura em reservado e em negociação). O `…_PISO` (base) é obrigatório.
+  - `…_VIDRO`: vidro semitransparente. O resto (inclusive `…_VARANDA`): cor do material.
+  - Pisos em alturas diferentes (sem faces coincidentes): base de 0,002 a 0,010; madeira e
+    molhado a partir de 0,010; varanda abaixo de 0.
+- Duas versões por tipo: **simples** (modo andar; até ~7 mil triângulos, ~100 KB
+  comprimido) e **detalhada** ("Ver apartamento"; cantos arredondados, ~35–40 mil
+  triângulos, ~500 KB comprimido). Exporte as duas em GLB e comprima com `pnpm model:compress`.
+
+**Encaixe nas outras unidades.** Sai da geometria, sem posição no código: a caixa
+`UNIT__` de cada unidade é comparada com a da unidade de referência. Os lados da caixa
+encostados na borda da laje são externos (fachada, oitão); entre as 8 transformações
+(rotação de 0°, 90°, 180° ou 270°, com ou sem espelho), vale a que leva os lados externos da
+referência aos da unidade e cujas medidas batem (5 cm). Assim as unidades 3 e 4 do Vista,
+espelhadas, e blocos virados para lados diferentes encaixam sozinhos. Empate (ex.: unidade
+de meio de fileira, só com a fachada externa): sem espelho e menor rotação, e o validador
+avisa "ambígua". TODO: forçar a orientação por uma propriedade na caixa `UNIT__` no Blender
+(custom property exportada como extras do glTF).
+
+**Cadastro.** Em `unit_types`: `interior_model_path` (simples), `interior_detail_model_path`
+(detalhado) e `interior_reference_unit` (object_key da unidade de referência). Os cômodos
+ficam em `unit_type_rooms` (nome, área em m², posição da etiqueta x/y nas coordenadas do
+Blender e ordem). Exemplo (o seed do Vista faz isso para os tipos A e B):
+
+```sql
+update public.unit_types
+   set interior_model_path = 'residencial-vista/interior-tipo-a-simples.glb',
+       interior_detail_model_path = 'residencial-vista/interior-tipo-a.glb',
+       interior_reference_unit = 'TA__F02__U201'
+ where id = '<tipo>';
+
+insert into public.unit_type_rooms
+  (organization_id, unit_type_id, name, area_m2, label_x, label_y, sort_order)
+values ('<org>', '<tipo>', 'Estar · jantar', 20.9, -3.3, 5.0, 1);
+```
+
+Depois: `pnpm model:upload … --layer interior|interior-detail --type "Tipo A"` (comandos na
+seção 2) e `pnpm model:validate` (camada leve), que lista o encaixe de cada unidade. A área
+privativa mostrada continua a do tipo (`unit_types.area_m2`).
+
+**Na página pública.** Interior sob demanda: os GLBs simples só baixam ao entrar num andar
+(um por tipo, reaproveitado entre andares); o detalhado baixa em segundo plano quando a
+ficha de uma unidade com interior abre (nunca com economia de dados nem em 2g) e no toque em
+"Ver apartamento". `?u=802&ver=1` abre direto no apartamento; o "Copiar link" da ficha
+continua `?u=802`.
+
 ## 4. Testes
 
 ```bash
@@ -298,6 +359,23 @@ anterior, mesmo banco e mesma máquina, mediana de 3:
 | Interativo, 20 blocos (CPU 4×)       | 1,90–1,92 s (3,98–4,08 s) | 1,85 s (3,25–3,54 s)      |
 | Interativo, Vista (CPU 4×)           | 1,70–1,72 s (2,86–2,89 s) | 1,72–1,75 s (2,77–2,80 s) |
 | fps Vista, CPU 4×                    | 58–59                     | 60                        |
+
+**Bloco 3 (interiores e fachada v2), 23/11/2026, build local, 4G rápido, mediana de 3**
+(`pnpm measure --network fast4g --runs 3`; GLBs separados por fase):
+
+| Medição                                       | 4G rápido                | + CPU 4×      | Meta         |
+| --------------------------------------------- | ------------------------ | ------------- | ------------ |
+| Prédio interativo (antes do bloco: 1,72 s)    | 1,77 s (+3 %)            | 2,18 s        | até +5 %     |
+| Detalhes do prédio na tela                    | 2,74 s                   | 3,51 s        | —            |
+| Maquetes, 1ª entrada num andar                | 0,50 s                   | 0,89 s        | até 1,5 s    |
+| Troca de andar (câmera / maquetes)            | 0,56 / 0,04 s            | 0,73 / 0,21 s | ~0,5 s       |
+| "Ver apartamento" aberto (ficha → modelo)     | 0,84 s                   | 1,51 s        | até 2 s      |
+| fps: prédio / andar / "Ver apartamento"       | 60 / 60 / 59             | 60 / 60 / 60  | ≥ 30         |
+| GLB: leve / detalhes / maquetes / apartamento | 118 / 556 / 209 / 551 KB |               | cena ≤ 10 MB |
+
+O "Ver apartamento" conta com o pré-carregamento do GLB detalhado quando a ficha abre (2,5 s
+de leitura antes do toque); sem ele, 1,7 s no 4G rápido. Draw calls (Vista): vista geral
+38 → 15, modo andar com maquetes 31.
 
 **fps no celular:** abra a demo com `?debug=1` (ex.: `http://<IP>:3000/e/residencial-vista?debug=1`).
 Aparece um contador com fps, média e mínimo enquanto o prédio gira, tempos até interativo e
@@ -451,14 +529,22 @@ primeira tentativa, com HTTP 200.
 
 ### Modelos 3D
 
+Arquivos novos sobem **antes** do seed que aponta para eles (`--path` envia para o caminho
+dado, sem depender do cadastro): o site publicado nunca aponta para um arquivo que ainda não
+existe. Bloco 3 (fachada v2 e interiores do Vista):
+
 ```bash
-pnpm model:compress modelos/residencial-vista-leve.glb
-pnpm model:compress modelos/residencial-vista-detalhes.glb
-pnpm model:upload                                                   # camada leve
-pnpm model:upload scripts/out/residencial-vista-detalhes.glb --layer detail
+pnpm model:upload scripts/out/residencial-vista-leve-v2.glb --path residencial-vista/residencial-vista-leve-v2.glb
+pnpm model:upload scripts/out/residencial-vista-detalhes-v2.glb --layer detail --path residencial-vista/residencial-vista-detalhes-v2.glb
+pnpm model:upload scripts/out/interior-tipo-a-simples.glb --layer interior --type "Tipo A" --path residencial-vista/interior-tipo-a-simples.glb
+pnpm model:upload scripts/out/interior-tipo-a.glb --layer interior-detail --type "Tipo A" --path residencial-vista/interior-tipo-a.glb
+pnpm model:upload scripts/out/interior-tipo-b-simples.glb --layer interior --type "Tipo B" --path residencial-vista/interior-tipo-b-simples.glb
+pnpm model:upload scripts/out/interior-tipo-b.glb --layer interior-detail --type "Tipo B" --path residencial-vista/interior-tipo-b.glb
+pnpm exec supabase db query --remote -f supabase/demo-seed.sql   # passa a apontar para eles
 ```
 
-O upload valida o GLB contra as unidades do remoto antes de enviar.
+O upload valida o GLB antes de enviar (camada leve: contra as unidades do remoto; interior:
+nomes `VIS__INT…` e piso de base).
 
 ### Testes contra o remoto
 

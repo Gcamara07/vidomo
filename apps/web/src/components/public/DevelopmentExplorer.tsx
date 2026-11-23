@@ -18,6 +18,7 @@ import {
 } from '@/lib/explore';
 import { BUILDING, searchFor, type NavState } from '@/lib/deep-link';
 import { EMPTY_FPS, addFpsSample, type FpsSummary } from '@/lib/fps-summary';
+import { browserConnection, canPrefetch } from '@/lib/prefetch';
 import type { LeadSource } from '@/lib/lead-form';
 import {
   unitTypeMap,
@@ -188,6 +189,24 @@ export function DevelopmentExplorer({
   const canViewApartment =
     !!manifest && !!selectedType && !!interiors?.[selectedType.name]?.detailUrl;
   const apartmentOpen = apartment && canViewApartment;
+  // Ficha aberta numa unidade com interior: o GLB detalhado do tipo baixa em segundo plano
+  // (o "Ver apartamento" abre mais rápido). Não com Save-Data nem em 2g.
+  const apartmentUrl = canViewApartment ? interiors?.[selectedType!.name]?.detailUrl : undefined;
+  useEffect(() => {
+    if (!apartmentUrl || !ready || !canPrefetch(browserConnection())) return;
+    let cancelled = false;
+    // Depois de o prédio estar interativo e fora do caminho do toque (ocioso).
+    const id = setTimeout(() => {
+      if (cancelled) return;
+      void import('@vidomo/viewer').then((m) => {
+        if (!cancelled) m.preloadModel(apartmentUrl);
+      });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [apartmentUrl, ready]);
 
   // Toque no 3D. No modo edifício (um bloco) ou no modo bloco, o viewer também sugere o
   // andar da unidade (onSelectFloor): entra no andar e a ficha abre. Com vários blocos, o
@@ -252,6 +271,10 @@ export function DevelopmentExplorer({
   }, []);
   const onDetailReady = useCallback(() => {
     setDetailMs(performance.mark('vidomo:detail-ready').startTime);
+  }, []);
+  // Marca de medição: as maquetes do andar entraram na tela.
+  const onInteriorsReady = useCallback(() => {
+    performance.mark('vidomo:interiors-ready');
   }, []);
   const onStats = useCallback((stats: ViewerStats) => setFps((s) => addFpsSample(s, stats)), []);
   const onError = useCallback((e: Error) => {
@@ -322,6 +345,7 @@ export function DevelopmentExplorer({
             onReady={onReady}
             onError={onError}
             onDetailReady={onDetailReady}
+            onInteriorsReady={onInteriorsReady}
             onStats={debug ? onStats : undefined}
             autoRotate={autoRotate}
             className={styles.viewer}

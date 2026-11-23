@@ -21,10 +21,17 @@
  *   - trocas (depois do fps): do toque no seletor até a câmera chegar
  *     (performance.mark('vidomo:view-settled'), já com a transição de 0,5 s):
  *     vista geral → bloco e bloco → andar (vários blocos), andar → andar (todos)
+ *   - maquetes (Bloco 3): do toque até as maquetes do andar entrarem na tela
+ *     (performance.mark('vidomo:interiors-ready')), na 1ª entrada e na troca de andar; fps
+ *     girando no modo andar
+ *   - "Ver apartamento": abre a página com ?u=<--unit>, espera a ficha (o GLB detalhado
+ *     baixa em segundo plano), toca no botão e mede até o modelo na tela
+ *     (performance.mark('vidomo:apartment-ready')); fps com o giro automático
+ *   - GLBs por fase: leve e detalhes do prédio, maquetes (modo andar) e apartamento
  */
 import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import puppeteer, { type Browser, type CDPSession } from 'puppeteer-core';
+import puppeteer, { type Browser, type CDPSession, type Page } from 'puppeteer-core';
 
 const { values } = parseArgs({
   options: {
@@ -32,6 +39,7 @@ const { values } = parseArgs({
     runs: { type: 'string', default: '3' },
     browser: { type: 'string' },
     network: { type: 'string', default: 'slow4g' },
+    unit: { type: 'string', default: '802' },
     json: { type: 'boolean', default: false },
   },
 });
@@ -108,6 +116,17 @@ interface RunResult {
   baseGlbBytes: number;
   detailGlbBytes: number;
   fps: number;
+  /** GLBs das maquetes (modo andar) e do "Ver apartamento" transferidos. */
+  interiorGlbBytes: number;
+  apartmentGlbBytes: number;
+  /** 1ª entrada num andar e troca de andar: até as maquetes entrarem na tela. */
+  firstInteriorsMs: number | null;
+  floorInteriorsMs: number | null;
+  /** fps girando no modo andar (com as maquetes, se houver). */
+  floorFps: number;
+  /** "Ver apartamento": toque até o modelo detalhado na tela; fps com o giro. */
+  apartmentMs: number | null;
+  apartmentFps: number | null;
   renderer: string;
   /** Troca de vista pelo seletor (ms), null quando não se aplica (ex.: um bloco só). */
   towerSwitchMs: number | null;
@@ -120,27 +139,87 @@ interface RunResult {
  * depois do toque, sem marca nova por 800 ms (abrir um bloco também muda a área livre e
  * pode reenquadrar). Em string pelo mesmo motivo do FRAME_COUNTER.
  */
+interface SwitchResult {
+  /** Câmera chegou (ms desde o toque). */
+  settled: number;
+  /** Maquetes do andar na tela (ms desde o toque); null se não houver maquetes. */
+  interiors: number | null;
+}
+
 const SWITCH_TIMER = (selector: string) => `new Promise((resolve) => {
   const btn = document.querySelector(${JSON.stringify(selector)});
   if (!btn) return resolve(null);
   const before = performance.getEntriesByName('vidomo:view-settled').length;
+  const beforeInt = performance.getEntriesByName('vidomo:interiors-ready').length;
   const t0 = performance.now();
   btn.click();
   let last = null;
   let lastSeen = performance.now();
+  let interiors = null;
   const id = setInterval(() => {
     const marks = performance.getEntriesByName('vidomo:view-settled');
     if (marks.length > before && marks.at(-1).startTime !== last) {
       last = marks.at(-1).startTime;
       lastSeen = performance.now();
     }
+    const im = performance.getEntriesByName('vidomo:interiors-ready');
+    if (interiors === null && im.length > beforeInt) interiors = im.at(-1).startTime - t0;
     const quiet = performance.now() - lastSeen > 800;
-    if ((last !== null && quiet) || performance.now() - t0 > 15000) {
+    // Sem maquetes: até 3 s depois da câmera parar (empreendimento sem interior).
+    const doneInt = interiors !== null || performance.now() - lastSeen > 3000;
+    if ((last !== null && quiet && doneInt) || performance.now() - t0 > 15000) {
       clearInterval(id);
-      resolve(last === null ? null : last - t0);
+      resolve(last === null ? null : { settled: last - t0, interiors });
     }
   }, 20);
 })`;
+
+/** Toca em "Ver apartamento" e espera o modelo detalhado na tela (ms), ou null sem botão. */
+const APARTMENT_TIMER = `new Promise((resolve) => {
+  const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Ver apartamento'));
+  if (!btn) return resolve(null);
+  const t0 = performance.now();
+  btn.click();
+  const id = setInterval(() => {
+    const m = performance.getEntriesByName('vidomo:apartment-ready');
+    if (m.length) { clearInterval(id); resolve(m[0].startTime - t0); }
+    else if (performance.now() - t0 > 20000) { clearInterval(id); resolve(null); }
+  }, 20);
+})`;
+
+/** Quadros desenhados por segundo durante `ms` (sem interação). */
+async function countFps(page: Page, ms: number): Promise<number> {
+  await page.evaluate('window.__drawFrames = 0; window.__countFrames = true;');
+  const start = Date.now();
+  await new Promise((r) => setTimeout(r, ms));
+  const frames = (await page.evaluate(
+    'window.__countFrames = false; window.__drawFrames',
+  )) as number;
+  return frames / ((Date.now() - start) / 1000);
+}
+
+/** Gira com o mouse por ~3 s e conta quadros desenhados por segundo. */
+async function dragFps(page: Page): Promise<number> {
+  const box = await page.evaluate(() => {
+    const r = document.querySelector('canvas')!.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.move(box.x, box.y);
+  await page.mouse.down();
+  await page.evaluate('window.__drawFrames = 0; window.__countFrames = true;');
+  const start = Date.now();
+  let i = 0;
+  while (Date.now() - start < 3000) {
+    i++;
+    await page.mouse.move(box.x + Math.sin(i / 10) * 120, box.y + Math.cos(i / 13) * 30);
+    await new Promise((r) => setTimeout(r, 8));
+  }
+  const frames = (await page.evaluate(
+    'window.__countFrames = false; window.__drawFrames',
+  )) as number;
+  await page.mouse.up();
+  return frames / ((Date.now() - start) / 1000);
+}
 
 async function measureOnce(browser: Browser, url: string, cpu: number): Promise<RunResult> {
   const context = await browser.createBrowserContext();
@@ -158,7 +237,18 @@ async function measureOnce(browser: Browser, url: string, cpu: number): Promise<
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu });
 
   const requests = new Map<string, { url: string; type: string }>();
-  const bytes = { page: 0, viewer: 0, supabase: 0, baseGlb: 0, detailGlb: 0 };
+  const bytes = {
+    page: 0,
+    viewer: 0,
+    supabase: 0,
+    baseGlb: 0,
+    detailGlb: 0,
+    interiorGlb: 0,
+    apartmentGlb: 0,
+  };
+  // Fase da medição: cada GLB conta na fase em que foi pedido pela primeira vez.
+  let phase: 'building' | 'interiors' | 'apartment' = 'building';
+  const seenGlb = new Set<string>();
   let glbCount = 0;
   let glbRequested = 0;
   cdp.on('Network.requestWillBeSent', (e) => {
@@ -174,10 +264,16 @@ async function measureOnce(browser: Browser, url: string, cpu: number): Promise<
     const path = new URL(r.url).pathname;
     const size = e.encodedDataLength;
     if (path.endsWith('.glb')) {
-      // O primeiro GLB é o leve (pré-carregado); os seguintes, detalhes (só depois do pronto).
-      if (glbCount++ === 0) bytes.baseGlb += size;
+      if (seenGlb.has(path)) return;
+      seenGlb.add(path);
+      // Prédio: o primeiro GLB é o leve (pré-carregado); os seguintes, detalhes. Depois,
+      // maquetes (modo andar) e o apartamento.
+      if (phase === 'interiors') bytes.interiorGlb += size;
+      else if (phase === 'apartment') bytes.apartmentGlb += size;
+      else if (glbCount++ === 0) bytes.baseGlb += size;
       else bytes.detailGlb += size;
-    } else if (r.type === 'Script') {
+    } else if (r.type === 'Script' && phase === 'building') {
+      // JS só da primeira página (a do "Ver apartamento" recarrega a mesma página).
       // Classifica pelo conteúdo: os nomes dos chunks mudam a cada build.
       pending.push(
         cdp
@@ -249,26 +345,62 @@ async function measureOnce(browser: Browser, url: string, cpu: number): Promise<
 
   // Trocas de vista pelo seletor (depois de soltar o mouse e a câmera parar).
   await new Promise((r) => setTimeout(r, 1200));
+  phase = 'interiors';
   const many = await page.evaluate(() => !!document.querySelector('nav[aria-label="Blocos"]'));
   let towerSwitchMs: number | null = null;
   let floorSwitchMs: number | null = null;
+  let floorSwitch: SwitchResult | null = null;
   if (many) {
     // Um bloco do meio da lista, e o andar mais alto dele.
-    towerSwitchMs = (await page.evaluate(
-      SWITCH_TIMER('nav[aria-label="Blocos"] button[data-tower]:nth-of-type(9)'),
-    )) as number | null;
-    floorSwitchMs = (await page.evaluate(
+    towerSwitchMs =
+      (
+        (await page.evaluate(
+          SWITCH_TIMER('nav[aria-label="Blocos"] button[data-tower]:nth-of-type(9)'),
+        )) as SwitchResult | null
+      )?.settled ?? null;
+    floorSwitch = (await page.evaluate(
       SWITCH_TIMER('nav[aria-label^="Andares do"] button[data-floor]'),
-    )) as number | null;
+    )) as SwitchResult | null;
+    floorSwitchMs = floorSwitch?.settled ?? null;
   }
-  // Andar → andar: o seguinte (mais baixo) na lista.
+  // Andar → andar: o seguinte (mais baixo) na lista. Junto, o tempo até as maquetes.
   const floorSel = many ? 'nav[aria-label^="Andares do"]' : 'nav[aria-label="Andares"]';
+  let firstInteriorsMs: number | null = null;
   if (!many) {
-    await page.evaluate(SWITCH_TIMER(`${floorSel} button[data-floor]`));
+    const first = (await page.evaluate(
+      SWITCH_TIMER(`${floorSel} button[data-floor]`),
+    )) as SwitchResult | null;
+    firstInteriorsMs = first?.interiors ?? null;
+  } else {
+    firstInteriorsMs = floorSwitch?.interiors ?? null;
   }
-  const floorToFloorMs = (await page.evaluate(
+  const floorToFloor = (await page.evaluate(
     SWITCH_TIMER(`${floorSel} button[data-floor][aria-pressed="true"] + button[data-floor]`),
-  )) as number | null;
+  )) as SwitchResult | null;
+  const floorToFloorMs = floorToFloor?.settled ?? null;
+  const floorInteriorsMs = floorToFloor?.interiors ?? null;
+  await new Promise((r) => setTimeout(r, 800));
+  const floorFps = await dragFps(page);
+
+  // "Ver apartamento": a ficha da unidade (o GLB detalhado baixa em segundo plano), toque
+  // no botão e espera o modelo na tela.
+  phase = 'apartment';
+  let apartmentMs: number | null = null;
+  let apartmentFps: number | null = null;
+  const unitUrl = new URL(url);
+  unitUrl.searchParams.set('u', values.unit!);
+  await page.goto(unitUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 120_000 });
+  await page.waitForFunction(() => performance.getEntriesByName('vidomo:viewer-ready').length > 0, {
+    timeout: 120_000,
+    polling: 50,
+  });
+  // Tempo de leitura da ficha antes do toque (o pré-carregamento acontece aqui).
+  await new Promise((r) => setTimeout(r, 2500));
+  apartmentMs = (await page.evaluate(APARTMENT_TIMER)) as number | null;
+  if (apartmentMs !== null) {
+    await new Promise((r) => setTimeout(r, 800));
+    apartmentFps = await countFps(page, 3000);
+  }
 
   await Promise.all(pending);
   await context.close();
@@ -282,6 +414,13 @@ async function measureOnce(browser: Browser, url: string, cpu: number): Promise<
     baseGlbBytes: bytes.baseGlb,
     detailGlbBytes: bytes.detailGlb,
     fps: frames / elapsed,
+    interiorGlbBytes: bytes.interiorGlb,
+    apartmentGlbBytes: bytes.apartmentGlb,
+    firstInteriorsMs,
+    floorInteriorsMs,
+    floorFps,
+    apartmentMs,
+    apartmentFps,
     renderer: timing.renderer,
     towerSwitchMs,
     floorSwitchMs,
@@ -325,6 +464,11 @@ async function main() {
             res.towerSwitchMs !== null ? `bloco ${sec(res.towerSwitchMs)}` : null,
             res.floorSwitchMs !== null ? `andar ${sec(res.floorSwitchMs)}` : null,
             res.floorToFloorMs !== null ? `andar→andar ${sec(res.floorToFloorMs)}` : null,
+            res.firstInteriorsMs !== null ? `maquetes 1ª ${sec(res.firstInteriorsMs)}` : null,
+            res.floorInteriorsMs !== null ? `maquetes troca ${sec(res.floorInteriorsMs)}` : null,
+            `andar ${res.floorFps.toFixed(0)} fps`,
+            res.apartmentMs !== null ? `apartamento ${sec(res.apartmentMs)}` : null,
+            res.apartmentFps !== null ? `${res.apartmentFps.toFixed(0)} fps` : null,
           ].filter(Boolean);
           console.error(
             `  ${name} #${r + 1}: FCP ${sec(res.fcpMs)} · pronto ${sec(res.viewerReadyMs)}${detail} · ${res.fps.toFixed(0)} fps${sw.length ? ` · ${sw.join(' · ')}` : ''}`,
@@ -354,6 +498,8 @@ async function main() {
     console.log(`  JS do supabase-js (gzip):      ${kb(med((r) => r.supabaseJsBytes))}`);
     console.log(`  GLB leve transferido:          ${kb(med((r) => r.baseGlbBytes))}`);
     console.log(`  GLB de detalhes transferido:   ${kb(med((r) => r.detailGlbBytes))}`);
+    console.log(`  GLB das maquetes (andar):      ${kb(med((r) => r.interiorGlbBytes))}`);
+    console.log(`  GLB do apartamento:            ${kb(med((r) => r.apartmentGlbBytes))}`);
     console.log(`  Página aparece (FCP):          ${sec(med((r) => r.fcpMs))}`);
     console.log(`  Prédio interativo:             ${sec(med((r) => r.viewerReadyMs))}`);
     console.log(
@@ -367,6 +513,14 @@ async function main() {
     console.log(`  Troca vista geral → bloco:     ${medOf((r) => r.towerSwitchMs)}`);
     console.log(`  Troca bloco → andar:           ${medOf((r) => r.floorSwitchMs)}`);
     console.log(`  Troca andar → andar:           ${medOf((r) => r.floorToFloorMs)}`);
+    console.log(`  Maquetes, 1ª entrada no andar: ${medOf((r) => r.firstInteriorsMs)}`);
+    console.log(`  Maquetes, troca de andar:      ${medOf((r) => r.floorInteriorsMs)}`);
+    console.log(`  fps girando no modo andar:     ${med((r) => r.floorFps).toFixed(0)}`);
+    console.log(`  "Ver apartamento" aberto:      ${medOf((r) => r.apartmentMs)}`);
+    const aptFps = rs.map((r) => r.apartmentFps).filter((x): x is number => x !== null);
+    console.log(
+      `  fps no "Ver apartamento":      ${aptFps.length ? median(aptFps).toFixed(0) : '—'}`,
+    );
   }
 }
 

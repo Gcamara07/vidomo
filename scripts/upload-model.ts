@@ -6,6 +6,10 @@
  *   --layer interior-detail --type "Tipo A"  unit_types.interior_detail_model_path
  * Valida o modelo antes de enviar (use --force para pular).
  *
+ * --path <caminho no bucket>: envia para esse caminho em vez do cadastrado. Serve para a
+ * publicação: os arquivos novos sobem ANTES do seed que passa a apontar para eles (o site
+ * publicado nunca aponta para um arquivo que ainda não existe).
+ *
  *   pnpm model:upload [arquivo.glb] [--slug residencial-vista]
  *     [--layer base|detail|interior|interior-detail] [--type "Tipo A"] [--force]
  *
@@ -27,6 +31,7 @@ const { values, positionals } = parseArgs({
     slug: { type: 'string', default: 'residencial-vista' },
     layer: { type: 'string', default: 'base' },
     type: { type: 'string' },
+    path: { type: 'string' },
     force: { type: 'boolean', default: false },
   },
 });
@@ -42,7 +47,12 @@ async function main() {
   if (!LAYERS.includes(layer)) throw new Error(`--layer deve ser ${LAYERS.join(', ')}`);
   const interior = layer === 'interior' || layer === 'interior-detail';
   let path: string | null;
-  if (interior) {
+  if (values.path) {
+    path = values.path.replace(/^\/+/, '');
+    if (!/^[a-z0-9][a-z0-9-]*\/[A-Za-z0-9._-]+\.glb$/.test(path)) {
+      throw new Error('--path deve ser "<pasta>/<arquivo>.glb" (ex.: residencial-vista/x.glb).');
+    }
+  } else if (interior) {
     if (!values.type) throw new Error('--type "<tipo de planta>" é obrigatório nos interiores.');
     const t = db.types.find((x) => x.name === values.type);
     if (!t) throw new Error(`Tipo "${values.type}" não existe em "${values.slug}".`);

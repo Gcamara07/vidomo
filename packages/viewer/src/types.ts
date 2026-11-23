@@ -43,6 +43,26 @@ export interface ViewerManifest {
   /** `default` é a câmera inicial; sem ela, o viewer enquadra o prédio sozinho. */
   cameras?: { default?: CameraPreset } & Record<string, CameraPreset | undefined>;
   objectKeyPrefixes?: Partial<ObjectKeyPrefixes>;
+  /**
+   * Interiores (maquetes) por tipo de planta, com chave livre (ex.: o id do tipo). Sem
+   * interior, o tipo continua como caixa colorida no modo andar.
+   */
+  interiors?: Record<string, InteriorModelRef>;
+  /** Tipo de planta de cada unidade: object_key → chave em `interiors`. */
+  unitTypes?: Record<string, string>;
+}
+
+export interface InteriorModelRef {
+  /** GLB simples (modo andar), URL já resolvida pelo app (getAssetUrl()). */
+  simpleUrl: string;
+  /** GLB detalhado ("Ver apartamento"), URL já resolvida. */
+  detailUrl?: string;
+  /**
+   * object_key da unidade de referência: o interior foi modelado nas coordenadas do prédio
+   * sobre a caixa UNIT__ dela (envoltória de referência). O encaixe nas outras unidades sai
+   * da comparação das caixas (fit.ts).
+   */
+  referenceUnit: string;
 }
 
 /**

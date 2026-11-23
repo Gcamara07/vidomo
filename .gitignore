@@ -46,4 +46,6 @@ modelos/teste-flora*
 modelos/referencias-flora/
 modelos/teste-blocos*
 modelos/referencias-blocos/
+# Referências visuais dos interiores (só para o modelador)
+modelos/referencias-interior/
 supabase/seeds/local/

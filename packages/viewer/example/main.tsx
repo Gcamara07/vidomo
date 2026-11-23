@@ -9,6 +9,9 @@
  *   ?detail=<url>      GLB de detalhes (padrão: o do demo; ?detail=none desliga)
  *   ?tower=B09         abre no modo bloco (com 2+ torres)
  *   ?floor=B09__F02    abre no modo andar (útil para medir fps com `pnpm measure --url`)
+ *   ?cam=px,py,pz,tx,ty,tz  câmera inicial (posição e alvo), para capturas reproduzíveis
+ *   ?interior=none     sem maquetes no modo andar (só o Vista tem interiores: GLBs de
+ *                      `pnpm model:compress modelos/interior-tipo-a-simples.glb` etc.)
  * Controles: vista geral / bloco / andar, seletor de bloco e de andar, rótulos dos blocos,
  * filtros de status e dormitórios (esmaecem unidades), estado serializável (onViewChange).
  */
@@ -35,6 +38,7 @@ import {
   type UnitStatusMap,
   type ViewerManifest,
   type ViewerMode,
+  type ViewerStats,
   type ViewerViewState,
 } from '../src';
 
@@ -47,6 +51,9 @@ interface Demo {
   floors: number;
   perFloor: number;
   bedroomsOf: (key: string) => number;
+  /** Interiores por tipo e tipo de cada unidade (como o app monta a partir do banco). */
+  interiors?: ViewerManifest['interiors'];
+  typeOf?: (key: string) => string;
 }
 const DEMOS: Record<string, Demo> = {
   vista: {
@@ -58,6 +65,20 @@ const DEMOS: Record<string, Demo> = {
     perFloor: 4,
     // Como no seed: finais 1 e 3 = 2 dorms (Tipo A); 2 e 4 = 3 dorms (Tipo B).
     bedroomsOf: (key) => (Number(parseUnitKey(key)?.code.slice(-1)) % 2 === 1 ? 2 : 3),
+    // Tipo A nos finais 1 e 3 (modelado sobre a U201); Tipo B nos finais 2 e 4 (sobre a U202).
+    interiors: {
+      A: {
+        simpleUrl: '/interior-tipo-a-simples.glb',
+        detailUrl: '/interior-tipo-a.glb',
+        referenceUnit: 'TA__F02__U201',
+      },
+      B: {
+        simpleUrl: '/interior-tipo-b-simples.glb',
+        detailUrl: '/interior-tipo-b.glb',
+        referenceUnit: 'TA__F02__U202',
+      },
+    },
+    typeOf: (key) => (Number(parseUnitKey(key)?.code.slice(-1)) % 2 === 1 ? 'A' : 'B'),
   },
   blocos: {
     title: 'Condomínio de teste',
@@ -86,10 +107,22 @@ const UNIT_KEYS = demo.towers.flatMap((t) =>
     Array.from({ length: demo.perFloor }, (_, p) => unitObjectKey(t, f + 1, (f + 1) * 100 + p + 1)),
   ).flat(),
 );
+if (demo.interiors && demo.typeOf && params.get('interior') !== 'none') {
+  manifest.interiors = demo.interiors;
+  manifest.unitTypes = Object.fromEntries(UNIT_KEYS.map((k) => [k, demo.typeOf!(k)]));
+}
 const BEDROOMS = [...new Set(UNIT_KEYS.map(bedroomsOf))].sort((a, b) => a - b);
 const MULTI = demo.towers.length > 1;
 const INITIAL_FLOOR = params.get('floor');
 const INITIAL_TOWER = params.get('tower');
+const CAM = params.get('cam')?.split(',').map(Number);
+const INITIAL_CAMERA =
+  CAM?.length === 6 && CAM.every(Number.isFinite)
+    ? {
+        position: CAM.slice(0, 3) as [number, number, number],
+        target: CAM.slice(3) as [number, number, number],
+      }
+    : undefined;
 /** Rótulo curto na vista geral: dígitos do código ('B09' → '09'). */
 const TOWER_LABELS = Object.fromEntries(
   demo.towers.map((t) => [t, { label: t.replace(/^\D+/, '') || t, title: `Bloco ${t}` }]),
@@ -124,6 +157,7 @@ function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [auto, setAuto] = useState(false);
   const [readyMs, setReadyMs] = useState<number | null>(null);
+  const [stats, setStats] = useState<ViewerStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewerMode>(
     INITIAL_FLOOR ? 'floor' : INITIAL_TOWER ? 'tower' : 'building',
@@ -221,6 +255,8 @@ function App() {
         }}
         onDetailReady={() => performance.mark('vidomo:detail-ready')}
         onError={(e) => setError(e.message)}
+        onStats={setStats}
+        initialCamera={INITIAL_CAMERA}
         insets={{ top: 48, bottom: panelH + 12 }}
         style={{ position: 'absolute', inset: 0 }}
       />
@@ -250,6 +286,7 @@ function App() {
         </h1>
         <span style={{ ...mono, fontSize: 11, color: '#6B6A63' }}>
           {error ? `erro: ${error}` : readyMs === null ? 'carregando…' : `pronto em ${readyMs} ms`}
+          {stats && ` · ${stats.drawCalls} draw calls · ${Math.round(stats.fps)} fps`}
         </span>
       </header>
 

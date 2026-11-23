@@ -28,6 +28,16 @@ describe('computeFloorFraming', () => {
     expect(f.maxPolarAngle).toBeLessThan(Math.PI / 2 - 0.2);
     expect(f.targetBounds).toEqual({ min: [-9.5, 25, -8.5], max: [9.5, 28, 8.5] });
   });
+
+  it('near maior que o padrão (precisão de profundidade), mas a frente da distância mínima', () => {
+    const f = computeFloorFraming(floor, 40, 9 / 19.5, 0.8);
+    expect(f.near).toBeGreaterThan(f.minDistance / 20);
+    expect(f.near).toBeLessThan(f.minDistance / 3);
+    // Profundidade: a 40 m, com 24 bits, a menor diferença distinguível fica bem abaixo dos
+    // 2 mm entre o piso da maquete e a laje.
+    const step = (40 * 40) / (f.near! * 2 ** 24);
+    expect(step).toBeLessThan(0.0002);
+  });
 });
 
 describe('transição', () => {

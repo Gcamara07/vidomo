@@ -17,6 +17,12 @@ export interface Framing {
   maxPolarAngle: number;
   /** Região onde o alvo da órbita pode ficar (o pan não "perde" o prédio). */
   targetBounds: Bounds;
+  /**
+   * Plano near da câmera (m). Sem valor: minDistance / 20. No modo andar é maior, para sobrar
+   * precisão de profundidade entre pisos a poucos milímetros (maquete sobre a laje) em GPUs
+   * de celular.
+   */
+  near?: number;
 }
 
 /** Direção da vista inicial: frente-direita, um pouco acima. */
@@ -123,6 +129,9 @@ export function computeFloorFraming(
     target: center,
     minDistance: radius * 0.5,
     maxDistance: fit * 1.6,
+    // A câmera fica a pelo menos radius × 0,5 do alvo e olha de cima: nada útil fica a menos
+    // de radius × 0,1 dela.
+    near: radius * 0.1,
     minPolarAngle: 0.12,
     // Continua "de cima": não deixa olhar o andar de lado.
     maxPolarAngle: (72 * Math.PI) / 180,

@@ -11,7 +11,8 @@
     "./types": "./src/types.ts",
     "./site": "./src/site.ts",
     "./floors": "./src/floors.ts",
-    "./towers": "./src/towers.ts"
+    "./towers": "./src/towers.ts",
+    "./fit": "./src/fit.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -82,6 +82,11 @@ export interface ClipPlanes {
   bottom: Plane;
   /** Mantém y ≤ base do andar ativo (passada esmaecida do que está abaixo). */
   below: Plane;
+  /**
+   * Topo da camada de detalhes da torre (fachada, varandas). Igual a `top`, exceto no andar
+   * com maquetes, quando pode descer até a laje (a maquete traz a própria varanda).
+   */
+  detailTop: Plane;
 }
 
 const OPEN = 1e6;
@@ -91,6 +96,7 @@ export function createClipPlanes(): ClipPlanes {
     top: new Plane(new Vector3(0, -1, 0), OPEN),
     bottom: new Plane(new Vector3(0, 1, 0), OPEN),
     below: new Plane(new Vector3(0, -1, 0), OPEN),
+    detailTop: new Plane(new Vector3(0, -1, 0), OPEN),
   };
 }
 
@@ -99,6 +105,7 @@ export function setClipRange(planes: ClipPlanes, range: { bottom: number; top: n
   planes.top.constant = range ? range.top : OPEN;
   planes.bottom.constant = range ? -range.bottom : OPEN;
   planes.below.constant = range ? range.bottom : OPEN;
+  planes.detailTop.constant = planes.top.constant;
 }
 
 /**

@@ -13,6 +13,19 @@ export {
 } from './Viewer';
 export { computeFloorLevels, type FloorLevel } from './floors';
 export {
+  applyFit,
+  describeFit,
+  exteriorSides,
+  fitInterior,
+  planTriangles,
+  rectFromPositions,
+  FIT_TOLERANCE,
+  type FitResult,
+  type FitSubject,
+  type FitTransform,
+  type PlanRect,
+} from './fit';
+export {
   classifyZone,
   towerFootprint,
   type Footprint,
@@ -23,6 +36,7 @@ export { computeTowers, towerKeyOf, type TowerInfo } from './towers';
 export {
   UNIT_STATUSES,
   type CameraPreset,
+  type InteriorModelRef,
   type UnitStatus,
   type UnitStatusMap,
   type Vec3,
@@ -32,6 +46,7 @@ export {
 } from './types';
 export {
   BRAND,
+  INTERIOR_BAND,
   PAPER_BACKGROUND,
   swatchBackground,
   SELECTED_APPEARANCE,

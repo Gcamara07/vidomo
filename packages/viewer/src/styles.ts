@@ -81,3 +81,18 @@ export function swatchBackground(status: UnitStatus): string {
   const angle = fill.angle === 45 ? -45 : 45;
   return `repeating-linear-gradient(${angle}deg, ${fill.color} 0 2px, ${fill.background} 2px 6px)`;
 }
+
+/**
+ * Maquete do interior (modo andar): faixa de status em volta da unidade, na altura do corte.
+ * Cor forte de cada status (nas hachuras, a cor da linha); esmaecida pelos filtros, Areia;
+ * selecionada, Latão (faixa mais larga + contorno Nanquim 3 px).
+ */
+export const INTERIOR_BAND: Record<UnitStatus | 'filtered' | 'selected', string> = {
+  available: '#8CCB8F',
+  reserved: '#C99A2E',
+  negotiating: BRAND.salvia,
+  sold: '#C97A6C',
+  unavailable: BRAND.areia,
+  filtered: BRAND.areia,
+  selected: BRAND.latao,
+};

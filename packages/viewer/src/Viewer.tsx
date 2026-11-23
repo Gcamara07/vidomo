@@ -42,22 +42,17 @@ import {
 } from 'react';
 import {
   Box3,
-  Color,
   Mesh,
   Vector3,
   type BufferGeometry,
+  type Group,
   type Intersection,
   type Plane,
   type Material,
   type PerspectiveCamera,
   type Raycaster,
 } from 'three';
-import {
-  LineMaterial,
-  LineSegments2,
-  LineSegmentsGeometry,
-  type OrbitControls as OrbitControlsImpl,
-} from 'three-stdlib';
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import {
   groupBatches,
   mergeBatch,
@@ -78,6 +73,23 @@ import {
   transitionMs,
   type Framing,
 } from './camera';
+import { BatchEdges } from './edges';
+import {
+  exteriorSides,
+  fitInterior,
+  planTriangles,
+  rectFromPositions,
+  type FitSubject,
+  type PlanRect,
+} from './fit';
+import {
+  INTERIOR_BUILDING_CUT,
+  extractInterior,
+  placeInterior,
+  type InteriorSource,
+  type InteriorUnitGeometry,
+} from './interior';
+import { InteriorLayer, type InteriorUnit } from './InteriorLayer';
 import { clipRange, computeFloorLevels } from './floors';
 import {
   FILTERED_OUTLINE,
@@ -658,24 +670,156 @@ function Building({
     [structure],
   );
 
+  // ---- Maquetes (interiores) no andar ativo --------------------------------------------
+  // Carga sob demanda: só ao entrar num andar, o GLB simples de cada tipo presente nele
+  // (uma vez por tipo; reaproveitado entre unidades e andares).
+  const interiorRefs = manifest.interiors;
+  const unitTypes = manifest.unitTypes;
+  const floorInteriorUnits = useMemo(() => {
+    if (!isFloorMode || !active || !interiorRefs || !unitTypes) return [];
+    return unitItems
+      .filter((it) => floorKeyOfUnit(it.key) === active.key)
+      .map((it) => ({ key: it.key, type: unitTypes[it.key] ?? '' }))
+      .filter((u) => interiorRefs[u.type]);
+  }, [isFloorMode, active, interiorRefs, unitTypes, unitItems]);
+  // Tipos pedidos até agora (só cresce): cada GLB é carregado uma vez e fica no cache.
+  const [requestedTypes, setRequestedTypes] = useState<string[]>([]);
+  const newTypes = [...new Set(floorInteriorUnits.map((u) => u.type))].filter(
+    (t) => !requestedTypes.includes(t),
+  );
+  if (newTypes.length) setRequestedTypes([...requestedTypes, ...newTypes]);
+  const [interiorSources, setInteriorSources] = useState<
+    ReadonlyMap<string, InteriorSource | 'error'>
+  >(() => new Map());
+  const onInteriorLoad = useCallback((type: string, src: InteriorSource | 'error') => {
+    setInteriorSources((m) => new Map(m).set(type, src));
+  }, []);
+
+  // Encaixe de cada unidade (fit.ts), pela caixa dela e a da unidade de referência do tipo.
+  const unitItemByKey = useMemo(() => new Map(unitItems.map((it) => [it.key, it])), [unitItems]);
+  const slabByKey = useMemo(() => new Map(slabItems.map((it) => [it.key, it])), [slabItems]);
+  const subjectOf = useCallback(
+    (unitKey: string): FitSubject | null => {
+      const it = unitItemByKey.get(unitKey);
+      const fk = floorKeyOfUnit(unitKey);
+      const slab = fk ? slabByKey.get(fk) : undefined;
+      return it && slab ? fitSubjectOf(it.arrays.position, slab.arrays.position) : null;
+    },
+    [unitItemByKey, slabByKey],
+  );
+  // Maquetes na tela: quando todos os tipos do andar terminaram de carregar (ou falharam).
+  const shownInteriors = useMemo(() => {
+    if (!floorInteriorUnits.length || !interiorRefs) return [];
+    if (floorInteriorUnits.some((u) => !interiorSources.has(u.type))) return [];
+    const out: { key: string; rect: PlanRect; geometry: InteriorUnitGeometry }[] = [];
+    for (const u of floorInteriorUnits) {
+      const src = interiorSources.get(u.type);
+      if (!src || src === 'error') continue;
+      const refKey = interiorRefs[u.type]!.referenceUnit;
+      const ref = subjectOf(refKey);
+      const target = subjectOf(u.key);
+      if (!ref) {
+        warnOnce(`[viewer] unidade de referência "${refKey}" (tipo ${u.type}) não está no modelo.`);
+        continue;
+      }
+      if (!target) continue;
+      const fit = fitInterior(ref, target);
+      if (!fit.fits) {
+        warnOnce(
+          `[viewer] o interior do tipo ${u.type} não cabe em ${u.key} (diferença de ${fit.deviation.toFixed(2)} m).`,
+        );
+      }
+      out.push({
+        key: u.key,
+        rect: target.rect,
+        geometry: placeInteriorCached(src, `${u.key}|${fit.matrix.join(',')}`, fit.matrix),
+      });
+    }
+    return out;
+  }, [floorInteriorUnits, interiorRefs, interiorSources, subjectOf]);
+  const shownSet = useMemo(() => new Set(shownInteriors.map((u) => u.key)), [shownInteriors]);
+  const floorUnitCount = useMemo(
+    () => (active ? unitItems.filter((it) => floorKeyOfUnit(it.key) === active.key).length : 0),
+    [active, unitItems],
+  );
+  const interiorUnits = useMemo<InteriorUnit[]>(
+    () =>
+      shownInteriors.map((u) => {
+        const status = unitStatus[u.key];
+        return {
+          ...u,
+          status,
+          cls: unitClass('normal', status, u.key === selectedUnit, dimmedUnits.has(u.key))!,
+        };
+      }),
+    [shownInteriors, unitStatus, selectedUnit, dimmedUnits],
+  );
+
   // Unidades: um lote por bloco e classe visual; a selecionada fica fora (desenhada à parte).
+  // Com maquete: a caixa fica num lote à parte ("|int"), invisível, só como alvo do toque.
   const unitBatches = useMemo(
     () =>
       groupBatches(unitItems, (it) => {
         const fk = floorKeyOfUnit(it.key);
         const tower = towerKeyOf('unit', it.key);
-        const cls = unitClass(
+        let cls = unitClass(
           partView(fk ? levels.get(fk) : undefined, tower, view, cut),
           unitStatus[it.key],
           it.key === selectedUnit,
           dimmedUnits.has(it.key),
         );
+        if (shownSet.has(it.key)) {
+          if (cls === 'selected') cls = `status:${unitStatus[it.key]!}`;
+          return cls ? `${tower ?? ''}|${cls}|int` : null;
+        }
         return cls && cls !== 'selected' ? `${tower ?? ''}|${cls}` : null;
       }),
-    [unitItems, levels, view, cut, unitStatus, selectedUnit, dimmedUnits],
+    [unitItems, levels, view, cut, unitStatus, selectedUnit, dimmedUnits, shownSet],
   );
+
+  // Transição caixa ↔ maquete: as caixas do andar baixam até a laje enquanto as paredes da
+  // maquete sobem, e o recorte do prédio desce até 1,45 m. Sem animação com reduced-motion.
+  const interiorGroup = useRef<Group>(null);
+  const boxGroup = useRef<Group>(null);
+  const morph = useRef({ p: 0, start: 0, key: '' });
+  const morphBase = shownInteriors[0]?.rect.base ?? 0;
+  // Detalhes da torre (fachada, varandas): rente à laje quando todas as unidades do andar
+  // têm maquete (ela traz a própria varanda e o guarda-corpo); senão, como o resto.
+  const slabCut =
+    INTERIOR_DETAIL_AT_SLAB &&
+    shownInteriors.length > 0 &&
+    shownInteriors.length === floorUnitCount;
+  const applyMorph = useCallback(() => {
+    applyMorphState({
+      p: morph.current.p,
+      interiorGroup: interiorGroup.current,
+      boxGroup: boxGroup.current,
+      base: morphBase,
+      range: shownInteriors.length ? range : null,
+      rangeRef,
+      planes: materials.planes,
+      slabCut,
+    });
+  }, [morphBase, range, shownInteriors.length, slabCut, materials]);
+  useLayoutEffect(() => {
+    const key = shownInteriors.length ? `${active?.key ?? ''}|${shownInteriors.length}` : '';
+    if (key !== morph.current.key) {
+      morph.current = { p: key && prefersReducedMotion() ? 1 : 0, start: performance.now(), key };
+    }
+    applyMorph();
+    invalidate();
+  }, [shownInteriors, active, applyMorph, invalidate]);
+  useFrame(() => {
+    const m = morph.current;
+    if (!m.key || m.p >= 1) return;
+    const t = (performance.now() - m.start) / MORPH_MS;
+    m.p = t >= 1 ? 1 : easeInOutCubic(t);
+    applyMorph();
+    invalidate();
+  });
+
   const selectedPart = useMemo(() => {
-    if (!selectedUnit) return null;
+    if (!selectedUnit || shownSet.has(selectedUnit)) return null;
     const it = unitItems.find((u) => u.key === selectedUnit);
     if (!it) return null;
     const fk = floorKeyOfUnit(it.key);
@@ -686,7 +830,7 @@ function Building({
       false,
     );
     return cls === 'selected' ? it.part : null;
-  }, [selectedUnit, unitItems, levels, view, cut, unitStatus]);
+  }, [selectedUnit, unitItems, levels, view, cut, unitStatus, shownSet]);
 
   // Lajes: um lote por classe (normal, abaixo do andar, de outro bloco).
   const slabBatches = useMemo(
@@ -783,21 +927,49 @@ function Building({
           />
         );
       })}
-      {[...unitBatches].map(([group, b]) => {
-        const st = unitStyle(group.slice(group.indexOf('|') + 1) as UnitClass, materials);
-        return (
-          <Batch
+      {[...unitBatches].map(([group, b]) =>
+        group.endsWith('|int') ? null : (
+          <UnitBatch
             key={group}
+            group={group}
             signature={`${modelId}|${b.signature}`}
             items={b.items}
-            material={st.material}
-            edgeColor={st.edgeColor}
-            raycast={st.raycast}
-            onTap={st.tappable ? onTapUnit : undefined}
-            pointer={st.tappable}
+            materials={materials}
+            onTap={onTapUnit}
           />
-        );
+        ),
+      )}
+      <group ref={boxGroup}>
+        {[...unitBatches].map(([group, b]) =>
+          group.endsWith('|int') ? (
+            <UnitBatch
+              key={group}
+              group={group.slice(0, -4)}
+              signature={`${modelId}|${b.signature}`}
+              items={b.items}
+              materials={materials}
+              onTap={onTapUnit}
+            />
+          ) : null,
+        )}
+      </group>
+      {requestedTypes.map((type) => {
+        const ref = interiorRefs?.[type];
+        return ref ? (
+          <ErrorBoundary
+            key={type}
+            onError={(e) => {
+              console.warn(`[viewer] interior do tipo ${type} falhou:`, e);
+              onInteriorLoad(type, 'error');
+            }}
+          >
+            <Suspense fallback={null}>
+              <InteriorLoader type={type} url={ref.simpleUrl} onLoad={onInteriorLoad} />
+            </Suspense>
+          </ErrorBoundary>
+        ) : null;
       })}
+      <InteriorLayer ref={interiorGroup} units={interiorUnits} materials={materials} />
       {selectedPart && (
         <SelectedUnit
           part={selectedPart}
@@ -815,6 +987,138 @@ function Building({
         />
       )}
     </>
+  );
+}
+
+/** Duração da transição caixa ↔ maquete (ms). */
+const MORPH_MS = 450;
+/**
+ * Andar com maquetes em todas as unidades: corta os detalhes da torre rente à laje (true) ou
+ * no mesmo recorte de 1,45 m da estrutura (false).
+ */
+const INTERIOR_DETAIL_AT_SLAB = true;
+
+const warned = new Set<string>();
+function warnOnce(msg: string) {
+  if (warned.has(msg)) return;
+  warned.add(msg);
+  console.warn(msg);
+}
+
+/** Caixa e lados externos de uma unidade (cache pelos vértices da caixa e da laje). */
+const subjectCache = new WeakMap<Float32Array, WeakMap<Float32Array, FitSubject>>();
+function fitSubjectOf(unit: Float32Array, slab: Float32Array): FitSubject {
+  let bySlab = subjectCache.get(unit);
+  if (!bySlab) subjectCache.set(unit, (bySlab = new WeakMap()));
+  let s = bySlab.get(slab);
+  if (!s) {
+    const rect = rectFromPositions(unit);
+    s = { rect, exterior: exteriorSides(rect, planTriangles(slab)) };
+    bySlab.set(slab, s);
+  }
+  return s;
+}
+
+/** Interior encaixado numa unidade (cache por tipo carregado, unidade e encaixe). */
+const placedCache = new WeakMap<InteriorSource, Map<string, InteriorUnitGeometry>>();
+function placeInteriorCached(
+  src: InteriorSource,
+  key: string,
+  matrix: readonly number[],
+): InteriorUnitGeometry {
+  let byKey = placedCache.get(src);
+  if (!byKey) placedCache.set(src, (byKey = new Map()));
+  let g = byKey.get(key);
+  if (!g) byKey.set(key, (g = placeInterior(src, matrix)));
+  return g;
+}
+
+/**
+ * Aplica o progresso p (0 = caixas, 1 = maquetes) da transição: escala vertical das
+ * maquetes (sobem da laje) e das caixas do andar (baixam até ela), e o recorte do prédio
+ * (estrutura até 1,45 m; detalhes até a laje se `slabCut`). Sem maquete: range null.
+ */
+function applyMorphState({
+  p,
+  interiorGroup,
+  boxGroup,
+  base,
+  range,
+  rangeRef,
+  planes,
+  slabCut,
+}: {
+  p: number;
+  interiorGroup: Group | null;
+  boxGroup: Group | null;
+  base: number;
+  range: { bottom: number; top: number } | null;
+  rangeRef: RangeRef;
+  planes: ViewerMaterials['planes'];
+  slabCut: boolean;
+}) {
+  if (interiorGroup) {
+    const s = Math.max(p, 1e-3);
+    interiorGroup.visible = p > 0;
+    interiorGroup.scale.y = s;
+    interiorGroup.position.y = base * (1 - s);
+  }
+  if (boxGroup) {
+    // Maquete completa: caixa invisível, no tamanho real (o toque usa a geometria).
+    const s = p >= 1 ? 1 : Math.max(1 - p, 1e-3);
+    boxGroup.visible = p < 1;
+    boxGroup.scale.y = s;
+    boxGroup.position.y = base * (1 - s);
+  }
+  if (range) {
+    const top = range.top + (base + INTERIOR_BUILDING_CUT - range.top) * p;
+    rangeRef.current = { ...range, top };
+    planes.top.constant = top;
+    planes.detailTop.constant = slabCut ? range.top + (base - 0.04 - range.top) * p : top;
+  }
+}
+
+/** Lê o GLB simples de um tipo e avisa o prédio (cache do useGLTF: uma carga por URL). */
+function InteriorLoader({
+  type,
+  url,
+  onLoad,
+}: {
+  type: string;
+  url: string;
+  onLoad: (type: string, src: InteriorSource) => void;
+}) {
+  const gltf = useGLTF(url, false, true);
+  const src = useMemo(() => extractInterior(gltf.scene), [gltf.scene]);
+  useEffect(() => onLoad(type, src), [type, src, onLoad]);
+  return null;
+}
+
+/** Lote de unidades com a aparência da classe ("<torre>|<classe>"). */
+function UnitBatch({
+  group,
+  signature,
+  items,
+  materials,
+  onTap,
+}: {
+  group: string;
+  signature: string;
+  items: BatchItem[];
+  materials: ViewerMaterials;
+  onTap: (key: string) => void;
+}) {
+  const st = unitStyle(group.slice(group.indexOf('|') + 1) as UnitClass, materials);
+  return (
+    <Batch
+      signature={signature}
+      items={items}
+      material={st.material}
+      edgeColor={st.edgeColor}
+      raycast={st.raycast}
+      onTap={st.tappable ? onTap : undefined}
+      pointer={st.tappable}
+    />
   );
 }
 
@@ -996,7 +1300,8 @@ function DetailLayer({
       const key = src ? `${src.uuid}|${zone}` : '';
       if (src && !byKey.has(key)) {
         const m = toFlatMaterial(src);
-        if (zone === 'tower') m.clippingPlanes = [materials.planes.top, materials.planes.bottom];
+        if (zone === 'tower')
+          m.clippingPlanes = [materials.planes.detailTop, materials.planes.bottom];
         byKey.set(key, m);
       }
     }
@@ -1030,7 +1335,10 @@ function DetailLayer({
       }),
     [items, cut],
   );
-  const clipPlanes = useMemo(() => [materials.planes.top, materials.planes.bottom], [materials]);
+  const clipPlanes = useMemo(
+    () => [materials.planes.detailTop, materials.planes.bottom],
+    [materials],
+  );
 
   return (
     <>
@@ -1265,43 +1573,6 @@ const Batch = memo(
     a.lowerPass === b.lowerPass,
 );
 
-/** Contorno de um lote: as mesmas linhas do <Edges> do drei (1 px de tela), num draw call. */
-function BatchEdges({
-  positions,
-  color,
-  clip,
-}: {
-  positions: Float32Array;
-  color: string;
-  clip: Plane[] | null;
-}) {
-  const width = useThree((s) => s.size.width);
-  const height = useThree((s) => s.size.height);
-  const line = useMemo(() => {
-    const geometry = new LineSegmentsGeometry();
-    geometry.setPositions(positions);
-    const material = new LineMaterial();
-    material.color = new Color(color);
-    material.linewidth = 1;
-    if (clip) material.clippingPlanes = clip;
-    const l = new LineSegments2(geometry, material);
-    l.computeLineDistances();
-    l.raycast = noRaycast as unknown as LineSegments2['raycast'];
-    return l;
-  }, [positions, color, clip]);
-  useLayoutEffect(() => {
-    line.material.resolution.set(width, height);
-  }, [line, width, height]);
-  useEffect(
-    () => () => {
-      line.geometry.dispose();
-      line.material.dispose();
-    },
-    [line],
-  );
-  return <primitive object={line} />;
-}
-
 /** Unidade selecionada: fora dos lotes (Latão, contorno grosso, desenhada por cima). */
 const SelectedUnit = memo(function SelectedUnit({
   part,
@@ -1448,7 +1719,7 @@ function CameraRig({
         c.minPolarAngle = f.minPolarAngle;
         c.maxPolarAngle = f.maxPolarAngle;
       }
-      cam.near = Math.max(f.minDistance / 20, 0.1);
+      cam.near = f.near ?? Math.max(f.minDistance / 20, 0.1);
       cam.far = f.maxDistance * 6;
       cam.updateProjectionMatrix();
     },

@@ -91,8 +91,8 @@ begin
     from (values
       ('a0000000-0000-4000-8000-0000000000a0'::uuid, 'residencial-vista', 'Residencial Vista',
        'published'::public.development_status, 'from'::public.price_display,
-       'residencial-vista/residencial-vista-leve.glb',
-       'residencial-vista/residencial-vista-detalhes.glb', 'TA', 'Torre A', 10, 4),
+       'residencial-vista/residencial-vista-leve-v2.glb',
+       'residencial-vista/residencial-vista-detalhes-v2.glb', 'TA', 'Torre A', 10, 4),
       ('b0000000-0000-4000-8000-0000000000b0'::uuid, 'residencial-teste', 'Residencial Teste',
        'draft'::public.development_status, 'hidden'::public.price_display,
        null, null, 'TB', 'Torre B', 2, 2)

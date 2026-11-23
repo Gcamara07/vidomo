@@ -81,6 +81,13 @@ async function main() {
     list('Andares sem objeto', report.floorsWithoutObject, false);
     list('Objetos de andar sem cadastro', report.objectsWithoutFloor, false);
     list('Objetos sem prefixo', report.unprefixedNames, false);
+    if (report.glassObjects > 0) {
+      console.log(`  [info] Vidros da fachada (VIDRO__): ${report.glassObjects}`);
+      list('Unidades sem VIDRO__ (caixa colorida)', report.unitsWithoutGlass, false);
+      list('VIDRO__ sem unidade', report.glassWithoutUnit, false);
+    } else if (layer === 'base') {
+      console.log('  [info] Sem VIDRO__: o status aparece nas caixas das unidades.');
+    }
     // Vários blocos: resumo por bloco, com as diferenças de cada um.
     if (report.towers.length > 1) {
       const bad = report.towers.filter((t) => !t.ok || t.missingIn);

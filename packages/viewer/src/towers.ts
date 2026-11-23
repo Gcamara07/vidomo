@@ -40,7 +40,7 @@ export function towerKeyOf(kind: ObjectKind | null, objectKey: string | null): s
   if (!objectKey) return null;
   if (kind === 'tower') return objectKey;
   if (kind === 'floor') return parseFloorKey(objectKey)?.tower ?? null;
-  if (kind === 'unit') return parseUnitKey(objectKey)?.tower ?? null;
+  if (kind === 'unit' || kind === 'glass') return parseUnitKey(objectKey)?.tower ?? null;
   return null;
 }
 

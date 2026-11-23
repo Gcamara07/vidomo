@@ -42,9 +42,12 @@ import {
 } from 'react';
 import {
   Box3,
+  DoubleSide,
   Mesh,
+  MeshBasicMaterial,
   Vector3,
   type BufferGeometry,
+  type Color,
   type Group,
   type Intersection,
   type Plane,
@@ -58,6 +61,7 @@ import {
   mergeBatch,
   partArrays,
   slabClass,
+  type PartArrays,
   unitClass,
   type BatchItem,
   type SlabClass,
@@ -117,7 +121,7 @@ import {
   type ResolvedView,
   type TowerInfo,
 } from './towers';
-import { BRAND, PAPER_BACKGROUND, unitAppearance } from './styles';
+import { BRAND, PAPER_BACKGROUND, SELECTED_APPEARANCE, unitAppearance } from './styles';
 import type {
   CameraPreset,
   UnitStatus,
@@ -665,10 +669,26 @@ function Building({
           // Núcleo TOWER__: a chave é o código do bloco (toque sugere o bloco).
           key: p.part.kind === 'tower' && p.part.objectKey ? p.part.objectKey : `~s${i}`,
           tower: p.tower,
+          // Paredes externas (VIS__FACHADA…): recortadas como os detalhes (rente à laje no
+          // andar com maquetes) e transparentes ao toque (a caixa da unidade atrás recebe).
+          facade: isFacade(p.part.name),
+          source: p.part.sourceMaterial,
           arrays: partArrays(p.part.geometry, p.part.matrix, 15),
         })),
     [structure],
   );
+  // Vidros da fachada por unidade (VIDRO__): o status vai para eles; a caixa da unidade fica
+  // invisível, só como alvo do toque. Sem VIDRO__, tudo como antes (caixa colorida).
+  const glassItems = useMemo(
+    () =>
+      model.glass.map((part) => ({
+        key: part.objectKey!,
+        part,
+        arrays: partArrays(part.geometry, part.matrix, 15),
+      })),
+    [model],
+  );
+  const glassKeys = useMemo(() => new Set(glassItems.map((g) => g.key)), [glassItems]);
 
   // ---- Maquetes (interiores) no andar ativo --------------------------------------------
   // Carga sob demanda: só ao entrar num andar, o GLB simples de cada tipo presente nele
@@ -742,6 +762,13 @@ function Building({
     () => (active ? unitItems.filter((it) => floorKeyOfUnit(it.key) === active.key).length : 0),
     [active, unitItems],
   );
+  // Caixa invisível (só alvo do toque) quando a unidade tem vidros na fachada, exceto no
+  // andar ativo sem maquete (ali a caixa colorida continua, como antes).
+  const boxHidden = useCallback(
+    (key: string) =>
+      glassKeys.has(key) && !(isFloorMode && active && floorKeyOfUnit(key) === active.key),
+    [glassKeys, isFloorMode, active],
+  );
   const interiorUnits = useMemo<InteriorUnit[]>(
     () =>
       shownInteriors.map((u) => {
@@ -772,9 +799,29 @@ function Building({
           if (cls === 'selected') cls = `status:${unitStatus[it.key]!}`;
           return cls ? `${tower ?? ''}|${cls}|int` : null;
         }
+        if (boxHidden(it.key)) {
+          if (cls === 'selected') cls = `status:${unitStatus[it.key]!}`;
+          return cls ? `${tower ?? ''}|${cls}|hid` : null;
+        }
         return cls && cls !== 'selected' ? `${tower ?? ''}|${cls}` : null;
       }),
-    [unitItems, levels, view, cut, unitStatus, selectedUnit, dimmedUnits, shownSet],
+    [unitItems, levels, view, cut, unitStatus, selectedUnit, dimmedUnits, shownSet, boxHidden],
+  );
+  // Vidros: um lote por bloco e classe visual, como as unidades (a selecionada também).
+  const glassBatches = useMemo(
+    () =>
+      groupBatches(glassItems, (it) => {
+        const fk = floorKeyOfUnit(it.key);
+        const tower = towerKeyOf('glass', it.key);
+        const cls = unitClass(
+          partView(fk ? levels.get(fk) : undefined, tower, view, cut),
+          unitStatus[it.key],
+          it.key === selectedUnit,
+          dimmedUnits.has(it.key),
+        );
+        return cls ? `${tower ?? ''}|${cls}` : null;
+      }),
+    [glassItems, levels, view, cut, unitStatus, selectedUnit, dimmedUnits],
   );
 
   // Transição caixa ↔ maquete: as caixas do andar baixam até a laje enquanto as paredes da
@@ -818,8 +865,23 @@ function Building({
     invalidate();
   });
 
+  // Selecionada com caixa invisível: vidros em Latão (no lote) + contorno Nanquim em volta.
+  const selectedOutline = useMemo(() => {
+    if (!selectedUnit || shownSet.has(selectedUnit) || !boxHidden(selectedUnit)) return null;
+    const it = unitItemByKey.get(selectedUnit);
+    const fk = floorKeyOfUnit(selectedUnit);
+    const v = partView(
+      fk ? levels.get(fk) : undefined,
+      towerKeyOf('unit', selectedUnit),
+      view,
+      cut,
+    );
+    if (!it || unitStatus[selectedUnit] === undefined || (v !== 'normal' && v !== 'context'))
+      return null;
+    return boxOutline(it.arrays.position, SELECTED_OUTLINE_GROW);
+  }, [selectedUnit, shownSet, boxHidden, unitItemByKey, levels, view, cut, unitStatus]);
   const selectedPart = useMemo(() => {
-    if (!selectedUnit || shownSet.has(selectedUnit)) return null;
+    if (!selectedUnit || shownSet.has(selectedUnit) || boxHidden(selectedUnit)) return null;
     const it = unitItems.find((u) => u.key === selectedUnit);
     if (!it) return null;
     const fk = floorKeyOfUnit(it.key);
@@ -830,7 +892,7 @@ function Building({
       false,
     );
     return cls === 'selected' ? it.part : null;
-  }, [selectedUnit, unitItems, levels, view, cut, unitStatus, shownSet]);
+  }, [selectedUnit, unitItems, levels, view, cut, unitStatus, shownSet, boxHidden]);
 
   // Lajes: um lote por classe (normal, abaixo do andar, de outro bloco).
   const slabBatches = useMemo(
@@ -847,15 +909,30 @@ function Building({
       ),
     [slabItems, levels, view, cut],
   );
-  // Estrutura da torre (núcleos, cobertura): um lote só, fora os blocos em silhueta.
-  const structureBatch = useMemo(
+  // Estrutura da torre (núcleos, cobertura) e fachada: um lote cada, fora os blocos em
+  // silhueta.
+  const structureBatches = useMemo(
     () =>
-      groupBatches(structureItems, (it) => (isGhost(cut, it.tower) ? null : 'structure')).get(
-        'structure',
+      groupBatches(structureItems, (it) =>
+        isGhost(cut, it.tower) ? null : it.facade ? 'facade' : 'structure',
       ),
     [structureItems, cut],
   );
+  const structureBatch = structureBatches.get('structure');
+  const facadeBatch = structureBatches.get('facade');
   const clipPlanes = useMemo(() => [materials.planes.top, materials.planes.bottom], [materials]);
+  const facadeClip = useMemo(
+    () => [materials.planes.detailTop, materials.planes.bottom],
+    [materials],
+  );
+  // Fachada na cor do próprio GLB (paredes brancas), chapada, recortada como os detalhes.
+  const facadeSource = facadeBatch?.items[0]?.source ?? null;
+  const facadeMaterial = useMemo(() => {
+    const m = facadeSource ? toFlatMaterial(facadeSource) : materials.structure.clone();
+    m.clippingPlanes = [materials.planes.detailTop, materials.planes.bottom];
+    return m;
+  }, [facadeSource, materials]);
+  useEffect(() => () => facadeMaterial.dispose(), [facadeMaterial]);
   const onTapStructure = useCallback(
     (key: string) => {
       if (towers.has(key)) onTapTower(key);
@@ -912,6 +989,33 @@ function Building({
           lowerPass={isFloorMode ? materials.lowerClipped : null}
         />
       )}
+      {facadeBatch && (
+        <Batch
+          signature={`${modelId}|${facadeBatch.signature}`}
+          items={facadeBatch.items}
+          material={facadeMaterial}
+          edgeColor={BRAND.musgo}
+          edgeClip={facadeClip}
+          lowerPass={isFloorMode ? materials.lowerClipped : null}
+        />
+      )}
+      {[...glassBatches].map(([group, b]) => (
+        <Batch
+          key={group}
+          signature={`${modelId}|g|${b.signature}`}
+          items={b.items}
+          material={glassMaterial(group.slice(group.indexOf('|') + 1) as UnitClass, materials)}
+        />
+      ))}
+      {selectedOutline && (
+        <BatchEdges
+          positions={selectedOutline}
+          color={BRAND.nanquim}
+          clip={null}
+          width={SELECTED_APPEARANCE.outline.width}
+          renderOrder={2}
+        />
+      )}
       {[...slabBatches].map(([cls, b]) => {
         const st = slabStyle(cls as SlabClass, materials, !isFloorMode);
         return (
@@ -927,8 +1031,22 @@ function Building({
           />
         );
       })}
+      <group visible={false}>
+        {[...unitBatches].map(([group, b]) =>
+          group.endsWith('|hid') ? (
+            <UnitBatch
+              key={group}
+              group={group.slice(0, -4)}
+              signature={`${modelId}|${b.signature}`}
+              items={b.items}
+              materials={materials}
+              onTap={onTapUnit}
+            />
+          ) : null,
+        )}
+      </group>
       {[...unitBatches].map(([group, b]) =>
-        group.endsWith('|int') ? null : (
+        group.endsWith('|int') || group.endsWith('|hid') ? null : (
           <UnitBatch
             key={group}
             group={group}
@@ -988,6 +1106,59 @@ function Building({
       )}
     </>
   );
+}
+
+/** Paredes externas (fachada) pela convenção de nomes: VIS__FACHADA, VIS__FACHADA_NORTE… */
+const isFacade = (name: string) => /^VIS__FACHADA(_|$)/.test(name);
+
+/** Folga do contorno da selecionada para fora da caixa (passa da face da fachada), em m. */
+const SELECTED_OUTLINE_GROW = 0.15;
+
+/** Material do vidro por classe (mesmas cores e hachuras das unidades). */
+function glassMaterial(cls: UnitClass, materials: ViewerMaterials): Material {
+  switch (cls) {
+    case 'lower':
+    case 'context':
+      return materials.lower;
+    case 'filtered':
+      return materials.glass.filtered;
+    case 'nostatus':
+      return materials.glass.status.unavailable;
+    case 'selected':
+      return materials.glass.selected;
+    default:
+      return materials.glass.status[cls.slice('status:'.length) as UnitStatus];
+  }
+}
+
+/**
+ * Arestas (12, em pares de pontos) da caixa de uma unidade, crescida `grow` para os lados:
+ * o contorno fica do lado de fora das paredes externas e aparece na fachada.
+ */
+function boxOutline(positions: Float32Array, grow: number): Float32Array {
+  const rect = rectFromPositions(positions);
+  let top = -Infinity;
+  for (let i = 1; i < positions.length; i += 3) top = Math.max(top, positions[i]!);
+  const c = Math.cos(rect.angle);
+  const sn = Math.sin(rect.angle);
+  const hu = rect.half[0] + grow;
+  const hv = rect.half[1] + grow;
+  const corners = (
+    [
+      [-hu, -hv],
+      [hu, -hv],
+      [hu, hv],
+      [-hu, hv],
+    ] as const
+  ).map(([u, v]) => [rect.center[0] + u * c - v * sn, rect.center[1] + u * sn + v * c] as const);
+  const out: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const a = corners[i]!;
+    const b = corners[(i + 1) % 4]!;
+    for (const y of [rect.base, top]) out.push(a[0], y, a[1], b[0], y, b[1]);
+    out.push(a[0], rect.base, a[1], a[0], top, a[1]);
+  }
+  return new Float32Array(out);
 }
 
 /** Duração da transição caixa ↔ maquete (ms). */
@@ -1317,23 +1488,49 @@ function DetailLayer({
     (part.sourceMaterial && flat.get(`${part.sourceMaterial.uuid}|${zone}`)) ||
     (zone === 'site' ? materials.site : materials.structure);
 
-  // Lotes por material do GLB e zona (torre recortada × entorno); blocos em silhueta saem.
+  // Lotes: materiais opacos sem textura viram um lote só por zona, com a cor gravada nos
+  // vértices (caixilhos, móveis das varandas e afins não somam um draw call por material);
+  // os outros (textura, transparência), um lote por material. Blocos em silhueta saem.
   const items = useMemo(
     () =>
-      parts.map((p, i) => ({
-        key: `~d${i}`,
-        piece: p,
-        arrays: partArrays(p.part.geometry, p.part.matrix, 30),
-      })),
+      parts.map((p, i) => {
+        const arrays = partArrays(p.part.geometry, p.part.matrix, 30);
+        const merged = mergeableMaterial(p.part.sourceMaterial);
+        return {
+          key: `~d${i}`,
+          piece: p,
+          merged,
+          arrays: merged ? withMaterialColor(arrays, p.part.sourceMaterial) : arrays,
+        };
+      }),
     [parts],
   );
   const batches = useMemo(
     () =>
       groupBatches(items, (it) => {
         if (it.piece.zone === 'tower' && isGhost(cut, it.piece.tower)) return null;
+        if (it.merged) return `${it.piece.zone}|merged`;
         return `${it.piece.zone}|${it.piece.part.sourceMaterial?.uuid ?? ''}`;
       }),
     [items, cut],
+  );
+  const mergedMaterials = useMemo(() => {
+    const make = (clip: boolean) => {
+      const m = new MeshBasicMaterial({ vertexColors: true, side: DoubleSide });
+      m.polygonOffset = true;
+      m.polygonOffsetFactor = 1;
+      m.polygonOffsetUnits = 1;
+      if (clip) m.clippingPlanes = [materials.planes.detailTop, materials.planes.bottom];
+      return m;
+    };
+    return { tower: make(true), site: make(false) };
+  }, [materials]);
+  useEffect(
+    () => () => {
+      mergedMaterials.tower.dispose();
+      mergedMaterials.site.dispose();
+    },
+    [mergedMaterials],
   );
   const clipPlanes = useMemo(
     () => [materials.planes.detailTop, materials.planes.bottom],
@@ -1351,7 +1548,11 @@ function DetailLayer({
             key={group}
             signature={`${gltf.scene.uuid}|${b.signature}`}
             items={b.items}
-            material={materialFor(first.part, first.zone)}
+            material={
+              group.endsWith('|merged')
+                ? mergedMaterials[tower ? 'tower' : 'site']
+                : materialFor(first.part, first.zone)
+            }
             edgeColor={BRAND.musgo}
             edgeClip={tower ? clipPlanes : null}
             raycast="none"
@@ -1361,6 +1562,26 @@ function DetailLayer({
       })}
     </>
   );
+}
+
+/** Material do GLB que pode entrar no lote de cor por vértice: opaco e sem textura. */
+function mergeableMaterial(src: Material | null): boolean {
+  const m = src as (Material & { map?: unknown; color?: Color }) | null;
+  return !!m && !m.map && !!m.color && !m.transparent && m.opacity >= 1 && !m.alphaTest;
+}
+
+/** Grava a cor do material nos vértices (multiplica a cor por vértice, se houver). */
+function withMaterialColor(arrays: PartArrays, src: Material | null): PartArrays {
+  const c = (src as Material & { color: Color }).color;
+  const n = arrays.position.length / 3;
+  const color = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const k = arrays.color ? arrays.color : null;
+    color[i * 3] = c.r * (k ? k[i * 3]! : 1);
+    color[i * 3 + 1] = c.g * (k ? k[i * 3 + 1]! : 1);
+    color[i * 3 + 2] = c.b * (k ? k[i * 3 + 2]! : 1);
+  }
+  return { ...arrays, color };
 }
 
 /** Peça do entorno: sempre normal (sem recorte e sem esmaecer), em qualquer modo. */

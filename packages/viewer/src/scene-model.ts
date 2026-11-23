@@ -37,6 +37,8 @@ export interface ScenePart {
 export interface BuildingModel {
   units: ScenePart[];
   floors: ScenePart[];
+  /** Vidros da fachada por unidade (VIDRO__<object_key>): pintados pelo status dela. */
+  glass: ScenePart[];
   /** Torre, áreas comuns, visuais e objetos sem prefixo. */
   structure: ScenePart[];
   /** Caixa de tudo. */
@@ -105,6 +107,7 @@ export function extractBuilding(
   const model: BuildingModel = {
     units: [],
     floors: [],
+    glass: [],
     structure: [],
     bounds: new Box3(),
     focusBounds: new Box3(),
@@ -125,7 +128,9 @@ export function extractBuilding(
     let geometry = mesh.geometry;
 
     const isUnit = parsed?.kind === 'unit' && parsed.valid;
-    if (isUnit) {
+    const isGlass = parsed?.kind === 'glass' && parsed.valid;
+    // UVs em metros também nos vidros (hachura de reservado e em negociação).
+    if (isUnit || isGlass) {
       matrix.decompose(tmpPos, tmpQuat, tmpScale);
       const key = `${geometry.uuid}|${tmpScale.toArray().map((n) => n.toFixed(5))}`;
       let g = uvCache.get(key);
@@ -146,6 +151,7 @@ export function extractBuilding(
     };
 
     if (isUnit) model.units.push(part);
+    else if (isGlass) model.glass.push(part);
     else if (parsed?.kind === 'floor') model.floors.push(part);
     else model.structure.push(part);
 

@@ -51,6 +51,13 @@ export interface ModelReport {
   duplicateKeys: string[];
   /** Objetos sem prefixo de tipo (aviso; o viewer os trata como visuais). */
   unprefixedNames: string[];
+  /**
+   * Vidros da fachada (VIDRO__<unidade>): só com pelo menos um no modelo. Unidade sem vidro
+   * continua como caixa colorida (aviso); vidro sem unidade é ignorado pelo viewer (aviso).
+   */
+  glassObjects: number;
+  unitsWithoutGlass: string[];
+  glassWithoutUnit: string[];
   /** Áreas comuns (AMENITY__) encontradas. Por enquanto só visuais; o toque para abrir
    *  panoramas vem depois. */
   amenities: string[];
@@ -125,6 +132,7 @@ export function compareModel(
   const unitObjs = new Map<string, number>();
   const amenities: string[] = [];
   const floorObjs = new Map<string, number>();
+  const glassObjs = new Map<string, number>();
   const invalidNames: string[] = [];
   const unprefixedNames: string[] = [];
 
@@ -139,13 +147,31 @@ export function compareModel(
       continue;
     }
     if (parsed.kind === 'amenity') amenities.push(parsed.objectKey);
-    const bucket = parsed.kind === 'unit' ? unitObjs : parsed.kind === 'floor' ? floorObjs : null;
+    const bucket =
+      parsed.kind === 'unit'
+        ? unitObjs
+        : parsed.kind === 'floor'
+          ? floorObjs
+          : parsed.kind === 'glass'
+            ? glassObjs
+            : null;
     bucket?.set(parsed.objectKey, (bucket.get(parsed.objectKey) ?? 0) + 1);
   }
 
   const dbUnits = new Set(db.unitKeys);
   const dbFloors = new Set(db.floorKeys);
-  const duplicateKeys = [...unitObjs, ...floorObjs].filter(([, n]) => n > 1).map(([k]) => k);
+  const duplicateKeys = [
+    ...unitObjs,
+    ...floorObjs,
+    ...[...glassObjs].map(([k, n]) => [`VIDRO__${k}`, n] as const),
+  ]
+    .filter(([, n]) => n > 1)
+    .map(([k]) => k);
+  const hasGlass = glassObjs.size > 0;
+  const unitsWithoutGlass = hasGlass
+    ? sorted([...unitObjs.keys()].filter((k) => !glassObjs.has(k)))
+    : [];
+  const glassWithoutUnit = sorted([...glassObjs.keys()].filter((k) => !unitObjs.has(k)));
   const isBase = layer === 'base';
   const overBaseBudget = isBase && fileBytes > BASE_MODEL_BUDGET_BYTES;
   const warnings: string[] = [];
@@ -154,6 +180,17 @@ export function compareModel(
     warnings.push(
       `Modelo leve com ${mb(fileBytes)} MB (meta: ${mb(BASE_MODEL_BUDGET_BYTES)} MB). ` +
         'Mova fachada, varandas e entorno para o modelo de detalhes.',
+    );
+  }
+  if (unitsWithoutGlass.length) {
+    warnings.push(
+      `${unitsWithoutGlass.length} unidade(s) sem VIDRO__: aparecem como caixa colorida, sem ` +
+        'status nas janelas.',
+    );
+  }
+  if (glassWithoutUnit.length) {
+    warnings.push(
+      `${glassWithoutUnit.length} VIDRO__ sem UNIT__ correspondente neste modelo: o viewer os ignora.`,
     );
   }
   if (!isBase && unitObjs.size > 0) {
@@ -175,6 +212,9 @@ export function compareModel(
     invalidNames: sorted(invalidNames),
     duplicateKeys: sorted(duplicateKeys),
     unprefixedNames: sorted(unprefixedNames),
+    glassObjects: glassObjs.size,
+    unitsWithoutGlass,
+    glassWithoutUnit,
     amenities: sorted(amenities),
     counts: {
       unitObjects: unitObjs.size,

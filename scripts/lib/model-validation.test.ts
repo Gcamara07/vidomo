@@ -30,6 +30,33 @@ describe('compareModel', () => {
     expect(r.counts).toEqual({ unitObjects: 3, floorObjects: 2, dbUnits: 3, dbFloors: 2 });
   });
 
+  it('VIDRO__: avisa unidade sem vidro e vidro sem unidade (não reprova)', () => {
+    const base = ['FLOOR__TA__F01', 'FLOOR__TA__F02'];
+    const units = ['UNIT__TA__F01__U101', 'UNIT__TA__F01__U102', 'UNIT__TA__F02__U201'];
+    const r = compareModel(
+      [...base, ...units, 'VIDRO__TA__F01__U101', 'VIDRO__TA__F01__U102', 'VIDRO__TA__F09__U999'],
+      db,
+      1000,
+    );
+    expect(r.ok).toBe(true);
+    expect(r.glassObjects).toBe(3);
+    expect(r.unitsWithoutGlass).toEqual(['TA__F02__U201']);
+    expect(r.glassWithoutUnit).toEqual(['TA__F09__U999']);
+    expect(r.warnings).toHaveLength(2);
+
+    // Sem nenhum VIDRO__ (ex.: condomínio de teste): nada a avisar.
+    const plain = compareModel([...base, ...units], db, 1000);
+    expect(plain.unitsWithoutGlass).toEqual([]);
+    expect(plain.warnings).toEqual([]);
+
+    const dup = compareModel(
+      [...base, ...units, 'VIDRO__TA__F01__U101', 'VIDRO__TA__F01__U101'],
+      db,
+      1000,
+    );
+    expect(dup.duplicateKeys).toEqual(['VIDRO__TA__F01__U101']);
+  });
+
   it('lista unidades sem objeto e objetos sem unidade', () => {
     const r = compareModel(
       ['FLOOR__TA__F01', 'FLOOR__TA__F02', 'UNIT__TA__F01__U101', 'UNIT__TA__F09__U999'],

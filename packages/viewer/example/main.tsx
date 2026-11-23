@@ -10,6 +10,7 @@
  *   ?tower=B09         abre no modo bloco (com 2+ torres)
  *   ?floor=B09__F02    abre no modo andar (útil para medir fps com `pnpm measure --url`)
  *   ?cam=px,py,pz,tx,ty,tz  câmera inicial (posição e alvo), para capturas reproduzíveis
+ *   ?sel=TA__F05__U504 abre com a unidade selecionada (sem entrar no andar)
  *   ?interior=none     sem maquetes no modo andar (só o Vista tem interiores: GLBs de
  *                      `pnpm model:compress modelos/interior-tipo-a-simples.glb` etc.)
  * Controles: vista geral / bloco / andar, seletor de bloco e de andar, rótulos dos blocos,
@@ -58,8 +59,8 @@ interface Demo {
 const DEMOS: Record<string, Demo> = {
   vista: {
     title: 'Residencial Vista',
-    model: '/residencial-vista-leve.glb',
-    detail: '/residencial-vista-detalhes.glb',
+    model: '/residencial-vista-leve-v2.glb',
+    detail: '/residencial-vista-detalhes-v2.glb',
     towers: ['TA'],
     floors: 10,
     perFloor: 4,
@@ -154,7 +155,7 @@ const mono: CSSProperties = { fontFamily: '"IBM Plex Mono", ui-monospace, monosp
 
 function App() {
   const [status, setStatus] = useState<UnitStatusMap>(initialStatus);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(params.get('sel'));
   const [auto, setAuto] = useState(false);
   const [readyMs, setReadyMs] = useState<number | null>(null);
   const [stats, setStats] = useState<ViewerStats | null>(null);

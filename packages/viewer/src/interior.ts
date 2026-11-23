@@ -3,7 +3,7 @@
  * de cada unidade já encaixada (fit.ts), pronta para entrar nos lotes (batch.ts).
  *
  * Objetos do GLB: VIS__INT<tipo>_<MATERIAL> (um por material). Papéis:
- *  - PISO: piso de base (sala e circulação), tingido pelo status da unidade;
+ *  - PISO, MADEIRA_PISO e MOLHADO: pisos, tingidos pelo status da unidade (a varanda não);
  *  - VIDRO: guarda-corpo e vidros, semitransparente;
  *  - o resto (paredes, corte, móveis, pisos de madeira e molhados, varanda): cor do próprio
  *    material, com um sombreado simples já gravado nas cores (sem luz em tempo real).
@@ -27,11 +27,14 @@ export interface InteriorSource {
   parts: InteriorPart[];
 }
 
+/** Pisos tingidos pelo status (a varanda não): base, madeira e áreas molhadas. */
+const TINTED_FLOORS = new Set(['PISO', 'MADEIRA_PISO', 'MOLHADO']);
+
 /** Papel pelo nome do objeto: VIS__INTA_PISO → floor; VIS__INTB_VIDRO → glass. */
 export function interiorRole(name: string): InteriorRole {
   const m = /^VIS__INT[A-Z0-9]*_([A-Z0-9_]+)$/.exec(name);
   const material = m?.[1] ?? '';
-  if (material === 'PISO') return 'floor';
+  if (TINTED_FLOORS.has(material)) return 'floor';
   if (material === 'VIDRO') return 'glass';
   return 'solid';
 }
@@ -57,7 +60,7 @@ export interface InteriorUnitGeometry {
   solid: PartArrays;
   /** Vidros: só posição. */
   glass: PartArrays;
-  /** Piso de base: posição + UV em metros (hachura) + cor neutra (piso esmaecido). */
+  /** Pisos: posição + UV em metros (hachura) + cor própria (piso esmaecido, neutro). */
   floor: PartArrays;
 }
 

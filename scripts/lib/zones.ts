@@ -95,7 +95,7 @@ export function classifyObjects(
   const out = { tower: [] as string[], site: [] as string[] };
   for (const n of meshNodes(doc)) {
     const kind = parseObjectName(n.getName())?.kind;
-    if (kind === 'unit' || kind === 'floor') continue;
+    if (kind === 'unit' || kind === 'floor' || kind === 'glass') continue;
     out[classifyZone(boxOf(n), ctx.footprints, ctx.options)].push(n.getName());
   }
   out.tower.sort();

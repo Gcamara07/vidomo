@@ -99,6 +99,17 @@ O viewer carrega o prédio em duas camadas:
 | 1 — leve (obrigatória)  | `developments.model_path`        | volumes `UNIT__`, lajes, casca       | torna o prédio interativo; meta de até **2 MB**                             |
 | 2 — detalhes (opcional) | `developments.detail_model_path` | fachada, varandas, entorno (`VIS__`) | carregada depois, sem bloquear; se falhar, o prédio segue só com a camada 1 |
 
+**Fachada com status nas janelas (opcional).** Na camada leve, cada unidade pode ter um
+objeto `VIDRO__<object_key>` (ex.: `VIDRO__TA__F06__U601`) com todos os vidros dela, e as
+paredes externas ficam num `VIS__FACHADA` (com os vãos). Com `VIDRO__`, o viewer pinta o
+status no vidro (mesmas cores e hachuras; esmaecida em Areia; selecionada em Latão com
+contorno Nanquim em volta da unidade) e a caixa `UNIT__` fica invisível, só como alvo do
+toque. No modo andar, a caixa colorida volta no andar ativo; com maquete, fachada e vidros
+do andar são cortados rente à laje. Unidade sem `VIDRO__` continua como caixa colorida. O
+`model:validate` avisa unidade sem `VIDRO__` e `VIDRO__` sem unidade. Na camada de
+detalhes, materiais opacos sem textura (caixilhos, móveis das varandas) são desenhados num
+lote só, com a cor gravada nos vértices.
+
 ```bash
 pnpm model:generate   # caixas: torre, 10 lajes, 40 unidades → scripts/out/residencial-vista-test.glb
 pnpm model:validate scripts/out/residencial-vista-test.glb

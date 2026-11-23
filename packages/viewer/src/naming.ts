@@ -7,9 +7,11 @@
  *   TOWER__TA             → kind 'tower', objectKey 'TA'
  *   AMENITY__PISCINA      → kind 'amenity'
  *   VIS__FACHADA_NORTE    → kind 'visual'
+ *   VIDRO__TA__F08__U802  → kind 'glass', objectKey 'TA__F08__U802' (vidros da unidade na
+ *                           fachada: o viewer pinta pelo status dela)
  */
 
-export type ObjectKind = 'unit' | 'floor' | 'tower' | 'amenity' | 'visual';
+export type ObjectKind = 'unit' | 'floor' | 'tower' | 'amenity' | 'visual' | 'glass';
 
 export type ObjectKeyPrefixes = Record<ObjectKind, string>;
 
@@ -19,6 +21,7 @@ export const DEFAULT_OBJECT_KEY_PREFIXES: ObjectKeyPrefixes = {
   tower: 'TOWER__',
   amenity: 'AMENITY__',
   visual: 'VIS__',
+  glass: 'VIDRO__',
 };
 
 export interface ParsedObjectName {
@@ -36,6 +39,8 @@ const KEY_PATTERNS: Record<ObjectKind, RegExp> = {
   tower: new RegExp(`^(${SEGMENT})$`),
   amenity: /^[A-Z0-9_]+$/,
   visual: /^[A-Z0-9_]+$/,
+  // Mesmo formato da unidade (o object_key é o dela).
+  glass: new RegExp(`^(${SEGMENT})__F(\\d{2,3})__U(${SEGMENT})$`),
 };
 
 /** Classifica o nome de um objeto do GLB. Retorna null se não tiver prefixo conhecido. */

@@ -145,6 +145,15 @@ export interface ViewerMaterials {
   ghostDepth: MeshBasicMaterial;
   /** Silhueta: passada de cor, semitransparente, só na face mais próxima. */
   ghost: MeshBasicMaterial;
+  /**
+   * Vidros da fachada (VIDRO__): mesmas cores e hachuras das unidades, mas recortados como a
+   * fachada (detailTop): no andar com maquetes, somem junto com as paredes externas.
+   */
+  glass: {
+    status: Record<UnitStatus, MeshBasicMaterial>;
+    selected: MeshBasicMaterial;
+    filtered: MeshBasicMaterial;
+  };
   planes: ClipPlanes;
   dispose(): void;
 }
@@ -178,6 +187,19 @@ export function createViewerMaterials(anisotropy = 4): ViewerMaterials {
     depthWrite: false,
   });
   ghost.name = 'vidomo_ghost';
+  const glassClip = [planes.detailTop, planes.bottom];
+  const clipped = (m: MeshBasicMaterial) => {
+    m.clippingPlanes = glassClip;
+    return m;
+  };
+  const glass = {
+    status: Object.fromEntries(
+      UNIT_STATUSES.map((s) => [s, clipped(fillMaterial(STATUS_APPEARANCE[s].fill, anisotropy))]),
+    ) as Record<UnitStatus, MeshBasicMaterial>,
+    selected: clipped(fillMaterial(SELECTED_APPEARANCE.fill, anisotropy)),
+    // Esmaecido pelos filtros: Areia (o Areia claro das caixas some contra a parede branca).
+    filtered: clipped(fillMaterial({ kind: 'solid', color: BRAND.areia }, anisotropy)),
+  };
 
   const all: Material[] = [
     ...Object.values(status),
@@ -190,6 +212,9 @@ export function createViewerMaterials(anisotropy = 4): ViewerMaterials {
     filtered,
     ghostDepth,
     ghost,
+    ...Object.values(glass.status),
+    glass.selected,
+    glass.filtered,
   ];
   return {
     status,
@@ -202,6 +227,7 @@ export function createViewerMaterials(anisotropy = 4): ViewerMaterials {
     filtered,
     ghostDepth,
     ghost,
+    glass,
     planes,
     dispose() {
       for (const m of all) {

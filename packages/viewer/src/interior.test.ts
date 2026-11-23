@@ -11,12 +11,13 @@ import {
 } from './interior';
 
 describe('interiorRole', () => {
-  it('só o PISO de base é tingido; VIDRO é vidro; o resto é sólido', () => {
+  it('pisos tingidos: PISO, MADEIRA_PISO e MOLHADO (varanda não); VIDRO é vidro', () => {
     expect(interiorRole('VIS__INTA_PISO')).toBe('floor');
     expect(interiorRole('VIS__INTB_PISO')).toBe('floor');
-    expect(interiorRole('VIS__INTA_MADEIRA_PISO')).toBe('solid');
+    expect(interiorRole('VIS__INTA_MADEIRA_PISO')).toBe('floor');
+    expect(interiorRole('VIS__INTA_MOLHADO')).toBe('floor');
+    expect(interiorRole('VIS__INTA_VARANDA')).toBe('solid');
     expect(interiorRole('VIS__INTA_BOXPISO')).toBe('solid');
-    expect(interiorRole('VIS__INTA_MOLHADO')).toBe('solid');
     expect(interiorRole('VIS__INTB_VIDRO')).toBe('glass');
     expect(interiorRole('VIS__INTA_CORTE')).toBe('solid');
   });

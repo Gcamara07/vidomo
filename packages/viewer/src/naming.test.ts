@@ -35,8 +35,21 @@ describe('parseObjectName', () => {
         tower: 'TOWER__',
         amenity: 'AMENITY__',
         visual: 'VIS__',
+        glass: 'VIDRO__',
       }),
     ).toEqual({ kind: 'unit', objectKey: 'TA__F01__U101', valid: true });
+  });
+});
+
+describe('VIDRO__ (vidros da unidade na fachada)', () => {
+  it('usa o object_key da unidade e não se confunde com VIS__', () => {
+    expect(parseObjectName('VIDRO__TA__F06__U601')).toEqual({
+      kind: 'glass',
+      objectKey: 'TA__F06__U601',
+      valid: true,
+    });
+    expect(parseObjectName('VIDRO__TA__F6__U601')?.valid).toBe(false);
+    expect(parseObjectName('VIS__VIDRO_LOBBY')?.kind).toBe('visual');
   });
 });
 

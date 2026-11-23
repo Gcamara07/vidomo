@@ -23,11 +23,21 @@ scripts/          gerar/validar/enviar o GLB de teste, medir a demo
 pnpm install
 pnpm db:start        # sobe o Supabase local (na 1ª vez baixa as imagens)
 pnpm db:reset        # aplica migrations + seed
-pnpm model:compress modelos/residencial-vista-leve.glb       # Meshopt → scripts/out/
-pnpm model:compress modelos/residencial-vista-detalhes.glb
+pnpm model:compress modelos/residencial-vista-leve-v2.glb    # Meshopt → scripts/out/
+pnpm model:compress modelos/residencial-vista-detalhes-v2.glb
 pnpm model:upload    # camada leve → developments.model_path
-pnpm model:upload scripts/out/residencial-vista-detalhes.glb --layer detail
+pnpm model:upload scripts/out/residencial-vista-detalhes-v2.glb --layer detail
+# Interiores (maquetes) por tipo de planta → unit_types.interior_model_path / _detail_
+pnpm model:compress modelos/interior-tipo-a-simples.glb   # idem tipo-a, tipo-b-simples, tipo-b
+pnpm model:upload scripts/out/interior-tipo-a-simples.glb --layer interior --type "Tipo A"
+pnpm model:upload scripts/out/interior-tipo-a.glb --layer interior-detail --type "Tipo A"
+pnpm model:upload scripts/out/interior-tipo-b-simples.glb --layer interior --type "Tipo B"
+pnpm model:upload scripts/out/interior-tipo-b.glb --layer interior-detail --type "Tipo B"
 ```
+
+`pnpm model:validate` (camada leve) lista, por unidade com interior, o tipo e o encaixe
+(ex.: `espelho Y + 0°`), e avisa unidade em que o interior não cabe na caixa (5 cm) ou cujo
+encaixe é ambíguo. Unidade de referência fora do GLB é erro.
 
 Crie `apps/web/.env.local` a partir do [.env.example](.env.example) com os valores de
 `pnpm exec supabase status` (URL da API e chave anon). A service_role não vai para o app.
@@ -36,8 +46,8 @@ Crie `apps/web/.env.local` a partir do [.env.example](.env.example) com os valor
 pnpm dev             # http://localhost:3000/e/residencial-vista
 ```
 
-`pnpm db:reset` apaga os objetos do Storage: depois de um reset, rode os dois
-`pnpm model:upload` de novo. O Studio fica em http://127.0.0.1:54323.
+`pnpm db:reset` apaga os objetos do Storage: depois de um reset, rode os
+`pnpm model:upload` de novo (prédio e interiores). O Studio fica em http://127.0.0.1:54323.
 
 O reset também volta a configuração de notificações (`/painel/config`) para a do seed:
 e-mails fictícios e nenhum webhook. Para manter o seu e-mail de teste, ponha um `update` de

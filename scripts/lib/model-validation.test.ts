@@ -3,6 +3,7 @@ import {
   BASE_MODEL_BUDGET_BYTES,
   MAX_MODEL_BYTES,
   compareByTower,
+  checkInteriorModel,
   compareModel,
 } from './model-validation';
 
@@ -179,5 +180,21 @@ describe('compareByTower (vários blocos)', () => {
       1000,
     );
     expect(r.towers.map((t) => t.tower)).toEqual(['TA']);
+  });
+});
+
+describe('checkInteriorModel', () => {
+  it('aceita o padrão VIS__INT<tipo>_<MATERIAL> com piso de base', () => {
+    const r = checkInteriorModel(
+      ['VIS__INTA_PISO', 'VIS__INTA_PAREDE', 'VIS__INTA_MADEIRA_PISO'],
+      1000,
+    );
+    expect(r).toEqual({ errors: [], warnings: [] });
+  });
+
+  it('exige o piso de base e avisa nomes fora do padrão', () => {
+    const r = checkInteriorModel(['VIS__INTA_PAREDE', 'Cube.001'], 1000);
+    expect(r.errors).toHaveLength(1);
+    expect(r.warnings[0]).toContain('Cube.001');
   });
 });

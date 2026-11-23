@@ -19,6 +19,7 @@ import {
   type ModelLayer,
 } from './lib/model-validation';
 import { developmentKeys, serviceClient } from './lib/supabase-env';
+import { interiorFitReport, modelGeometry } from './lib/interior-fit';
 import { classifyObjects, towerPairsOf, zoneContextOf } from './lib/zones';
 
 const { values, positionals } = parseArgs({
@@ -56,9 +57,17 @@ async function main() {
   const zones = classifyObjects(doc, zoneContextOf(baseDoc));
   // Blocos colados (recortados juntos no modo andar), pela geometria das lajes e núcleos.
   const pairs = towerPairsOf(baseDoc);
+  // Interiores (camada leve): encaixe por unidade, pelas caixas UNIT__ e lajes do GLB.
+  const interiors =
+    layer === 'base' && db.types.some((t) => t.referenceUnit)
+      ? interiorFitReport(modelGeometry(doc), db.unitTypes, db.types)
+      : null;
+  if (interiors && interiors.errors.length) report.ok = false;
 
   if (values.json) {
-    console.log(JSON.stringify({ file, slug: values.slug, ...report, zones, pairs }, null, 2));
+    console.log(
+      JSON.stringify({ file, slug: values.slug, ...report, zones, pairs, interiors }, null, 2),
+    );
   } else {
     const list = (title: string, xs: string[], blocking = true) => {
       const mark = xs.length === 0 ? 'ok' : blocking ? 'ERRO' : 'aviso';
@@ -119,6 +128,29 @@ async function main() {
               `             ${title}: ${xs.slice(0, 8).join(', ')}${xs.length > 8 ? ` … +${xs.length - 8}` : ''}`,
             );
         }
+      }
+    }
+    if (interiors) {
+      const bad = interiors.rows.filter((r) => !r.fits);
+      const amb = interiors.rows.filter((r) => r.ambiguous);
+      const mark = interiors.errors.length ? 'ERRO' : bad.length || amb.length ? 'aviso' : 'ok';
+      console.log(
+        `  [${mark}] Interiores: ${interiors.rows.length} unidades com maquete` +
+          (bad.length ? ` · ${bad.length} não cabem na caixa (5 cm)` : '') +
+          (amb.length ? ` · ${amb.length} ambíguas (sem espelho, menor rotação)` : ''),
+      );
+      for (const e of interiors.errors) console.log(`         ERRO: ${e}`);
+      for (const w of interiors.warnings) console.log(`         aviso: ${w}`);
+      for (const r of interiors.rows) {
+        const flags = [
+          r.transform === null ? 'sem encaixe' : '',
+          r.transform !== null && !r.fits ? `não cabe (${r.deviation!.toFixed(2)} m)` : '',
+          r.ambiguous ? 'ambígua' : '',
+        ].filter(Boolean);
+        console.log(
+          `         ${r.unit.padEnd(16)} ${r.type.padEnd(10)} ${(r.transform ?? '—').padEnd(16)}` +
+            (flags.length ? ` ${flags.join(', ')}` : ''),
+        );
       }
     }
     if (report.amenities.length)

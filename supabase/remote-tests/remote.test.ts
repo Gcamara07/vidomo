@@ -46,8 +46,9 @@ describe('leitura anônima pela função pública', () => {
       {
         slug: SLUG,
         name: 'Residencial Vista',
-        model_path: 'residencial-vista/residencial-vista-leve.glb',
-        detail_model_path: 'residencial-vista/residencial-vista-detalhes.glb',
+        // Bloco 3, etapa 1b: fachada nova (demo-seed troca para os v2).
+        model_path: 'residencial-vista/residencial-vista-leve-v2.glb',
+        detail_model_path: 'residencial-vista/residencial-vista-detalhes-v2.glb',
         viewer_cameras: null,
       },
     ]);
@@ -90,8 +91,26 @@ describe('leitura anônima pela função pública', () => {
     expect(data).toEqual([]);
   });
 
-  it('os dois GLBs estão no bucket público', async () => {
-    for (const f of ['residencial-vista-leve.glb', 'residencial-vista-detalhes.glb']) {
+  it('public_development_unit_types devolve os tipos com interior e cômodos', async () => {
+    // Bloco 3 (migration 20261123000100): o remoto precisa dela antes do deploy do front.
+    const { data, error } = await anon.rpc('public_development_unit_types', { p_slug: SLUG });
+    expect(error).toBeNull();
+    const types = data as { name: string; interior_reference_unit: string; rooms: unknown[] }[];
+    expect(types.map((t) => [t.name, t.interior_reference_unit, t.rooms.length])).toEqual([
+      ['Tipo A', 'TA__F02__U201', 7],
+      ['Tipo B', 'TA__F02__U202', 8],
+    ]);
+  });
+
+  it('os GLBs do prédio e dos interiores estão no bucket público', async () => {
+    for (const f of [
+      'residencial-vista-leve-v2.glb',
+      'residencial-vista-detalhes-v2.glb',
+      'interior-tipo-a-simples.glb',
+      'interior-tipo-a.glb',
+      'interior-tipo-b-simples.glb',
+      'interior-tipo-b.glb',
+    ]) {
       const res = await fetch(`${url}/storage/v1/object/public/models/residencial-vista/${f}`, {
         method: 'HEAD',
       });
@@ -107,6 +126,7 @@ describe('anônimo sem acesso direto', () => {
     'towers',
     'floors',
     'unit_types',
+    'unit_type_rooms',
     'unit_status_history',
     'organizations',
     'organization_members',

@@ -183,6 +183,147 @@ describe('admin da org B contra dados da org A', () => {
   });
 });
 
+describe('cômodos e interiores (unit_type_rooms, unit_types): org B contra a org A', () => {
+  let roomA: { id: string; unit_type_id: string; name: string };
+  let typeB: { id: string; organization_id: string };
+
+  beforeAll(async () => {
+    const { data, error } = await service
+      .from('unit_type_rooms')
+      .select('id, unit_type_id, name')
+      .eq('organization_id', devA.organization_id)
+      .eq('name', 'Varanda')
+      .limit(1)
+      .single();
+    if (error) throw error;
+    roomA = data;
+    const { data: t } = await service
+      .from('unit_types')
+      .select('id, organization_id')
+      .eq('development_id', devB.id)
+      .limit(1)
+      .single();
+    typeB = t!;
+  });
+
+  afterAll(async () => {
+    await service.from('unit_type_rooms').delete().eq('unit_type_id', typeB.id);
+  });
+
+  it('admin A lê os 15 cômodos da própria organização', async () => {
+    const { data, error } = await adminA.from('unit_type_rooms').select('organization_id');
+    expect(error).toBeNull();
+    expect(data).toHaveLength(15);
+  });
+
+  it('admin B não enxerga cômodos da org A, nem pelo id', async () => {
+    const all = await adminB.from('unit_type_rooms').select('organization_id');
+    expect(all.error).toBeNull();
+    expect(all.data!.every((r) => r.organization_id === devB.organization_id)).toBe(true);
+    const byId = await adminB.from('unit_type_rooms').select('*').eq('id', roomA.id);
+    expect(byId.data).toEqual([]);
+  });
+
+  it('admin B não cria cômodo em tipo da org A (com a org de A ou com a própria)', async () => {
+    const row = {
+      unit_type_id: roomA.unit_type_id,
+      name: 'Intruso',
+      area_m2: 1,
+      label_x: 0,
+      label_y: 0,
+    };
+    const asA = await adminB
+      .from('unit_type_rooms')
+      .insert({ ...row, organization_id: devA.organization_id });
+    expect(asA.error).not.toBeNull();
+    const asB = await adminB
+      .from('unit_type_rooms')
+      .insert({ ...row, organization_id: devB.organization_id });
+    expect(asB.error).not.toBeNull();
+  });
+
+  it('UPDATE e DELETE de cômodo da org A não afetam nada', async () => {
+    const upd = await adminB
+      .from('unit_type_rooms')
+      .update({ name: 'Trocado' })
+      .eq('id', roomA.id)
+      .select();
+    expect(upd.data ?? []).toEqual([]);
+    const del = await adminB.from('unit_type_rooms').delete().eq('id', roomA.id).select();
+    expect(del.data ?? []).toEqual([]);
+    const { data } = await service
+      .from('unit_type_rooms')
+      .select('name')
+      .eq('id', roomA.id)
+      .single();
+    expect(data!.name).toBe(roomA.name);
+  });
+
+  it('não troca o interior de um tipo da org A', async () => {
+    const { data } = await adminB
+      .from('unit_types')
+      .update({
+        interior_model_path: null,
+        interior_detail_model_path: null,
+        interior_reference_unit: null,
+      })
+      .eq('id', roomA.unit_type_id)
+      .select();
+    expect(data ?? []).toEqual([]);
+    const { data: t } = await service
+      .from('unit_types')
+      .select('interior_model_path')
+      .eq('id', roomA.unit_type_id)
+      .single();
+    expect(t!.interior_model_path).not.toBeNull();
+  });
+
+  it('vendedor da org A não cadastra cômodo (só admin)', async () => {
+    const sales = await signIn('vendas@exemplo.test');
+    const { error } = await sales.from('unit_type_rooms').insert({
+      organization_id: devA.organization_id,
+      unit_type_id: roomA.unit_type_id,
+      name: 'Do vendedor',
+      area_m2: 1,
+      label_x: 0,
+      label_y: 0,
+    });
+    expect(error).not.toBeNull();
+    await sales.auth.signOut();
+  });
+
+  it('admin B cadastra e lê cômodo no próprio tipo', async () => {
+    const { error } = await adminB.from('unit_type_rooms').insert({
+      organization_id: devB.organization_id,
+      unit_type_id: typeB.id,
+      name: 'Sala',
+      area_m2: 12.5,
+      label_x: 1,
+      label_y: 2,
+    });
+    expect(error).toBeNull();
+    const { data } = await adminB
+      .from('unit_type_rooms')
+      .select('name')
+      .eq('unit_type_id', typeB.id);
+    expect(data).toEqual([{ name: 'Sala' }]);
+  });
+
+  it('a unidade de referência precisa ser do mesmo empreendimento', async () => {
+    const { error } = await service
+      .from('unit_types')
+      .update({ interior_model_path: 'x/y.glb', interior_reference_unit: 'TA__F02__U201' })
+      .eq('id', typeB.id);
+    expect(error).not.toBeNull();
+    // Interior incompleto (modelo sem unidade de referência) também é recusado.
+    const incompleto = await service
+      .from('unit_types')
+      .update({ interior_model_path: 'x/y.glb' })
+      .eq('id', typeB.id);
+    expect(incompleto.error).not.toBeNull();
+  });
+});
+
 describe('admin da org A na própria organização', () => {
   it('vê as 40 unidades do Residencial Vista', async () => {
     const { data } = await adminA.from('units').select('id').eq('development_id', devA.id);
@@ -250,15 +391,19 @@ describe('admin da org A na própria organização', () => {
 });
 
 describe('comprador anônimo', () => {
-  it.each(['units', 'developments', 'unit_status_history', 'organizations'])(
-    'não lê %s diretamente',
-    async (table) => {
-      const { data, error } = await anon.from(table).select('*');
-      // Sem GRANT: erro de permissão. Nunca dados.
-      expect(error).not.toBeNull();
-      expect(data).toBeNull();
-    },
-  );
+  it.each([
+    'units',
+    'developments',
+    'unit_status_history',
+    'organizations',
+    'unit_types',
+    'unit_type_rooms',
+  ])('não lê %s diretamente', async (table) => {
+    const { data, error } = await anon.from(table).select('*');
+    // Sem GRANT: erro de permissão. Nunca dados.
+    expect(error).not.toBeNull();
+    expect(data).toBeNull();
+  });
 
   it('lê o empreendimento publicado pela função pública, só campos públicos', async () => {
     const { data, error } = await anon.rpc('public_development_units', { p_slug: SLUG_A });
@@ -300,14 +445,45 @@ describe('comprador anônimo', () => {
       {
         slug: SLUG_A,
         name: 'Residencial Vista',
-        model_path: 'residencial-vista/residencial-vista-leve.glb',
-        detail_model_path: 'residencial-vista/residencial-vista-detalhes.glb',
+        model_path: 'residencial-vista/residencial-vista-leve-v2.glb',
+        detail_model_path: 'residencial-vista/residencial-vista-detalhes-v2.glb',
         viewer_cameras: null,
       },
     ]);
   });
 
+  it('lê tipos de planta, interiores e cômodos pela função pública, só campos públicos', async () => {
+    const { data, error } = await anon.rpc('public_development_unit_types', { p_slug: SLUG_A });
+    expect(error).toBeNull();
+    const types = data as Record<string, unknown>[];
+    expect(types.map((t) => t.name)).toEqual(['Tipo A', 'Tipo B']);
+    for (const t of types) {
+      expect(Object.keys(t).sort()).toEqual(
+        [
+          'area_m2',
+          'bedrooms',
+          'interior_detail_model_path',
+          'interior_model_path',
+          'interior_reference_unit',
+          'name',
+          'rooms',
+          'suites',
+        ].sort(),
+      );
+    }
+    const a = types[0] as { interior_reference_unit: string; rooms: Record<string, unknown>[] };
+    expect(a.interior_reference_unit).toBe('TA__F02__U201');
+    expect(a.rooms).toHaveLength(7);
+    // Em ordem, só nome, área e posição da etiqueta (sem ids nem organização).
+    expect(a.rooms[0]).toEqual({ name: 'Estar · jantar', area_m2: 20.9, x: -3.3, y: 5.0 });
+    expect(Object.keys(a.rooms[0]!).sort()).toEqual(['area_m2', 'name', 'x', 'y']);
+    expect((types[1] as { rooms: unknown[] }).rooms).toHaveLength(8);
+  });
+
   it('não lê empreendimento em rascunho', async () => {
+    const types = await anon.rpc('public_development_unit_types', { p_slug: SLUG_B });
+    expect(types.error).toBeNull();
+    expect(types.data).toEqual([]);
     const units = await anon.rpc('public_development_units', { p_slug: SLUG_B });
     expect(units.error).toBeNull();
     expect(units.data).toEqual([]);

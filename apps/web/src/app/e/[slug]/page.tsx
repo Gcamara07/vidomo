@@ -8,7 +8,9 @@ import { parseDeepLink } from '@/lib/deep-link';
 import {
   fetchPublicContact,
   fetchPublicDevelopment,
+  fetchPublicUnitTypes,
   fetchPublicUnits,
+  interiorRefs,
 } from '@/lib/public-development';
 import { publicServerClient } from '@/lib/supabase/public-server';
 
@@ -53,10 +55,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function DevelopmentPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
   const { debug, u, andar, bloco } = await searchParams;
-  const [development, units, contact] = await Promise.all([
+  const [development, units, contact, unitTypes] = await Promise.all([
     getDevelopment(slug),
     fetchPublicUnits(publicServerClient(), slug),
     fetchPublicContact(publicServerClient(), slug),
+    fetchPublicUnitTypes(publicServerClient(), slug),
   ]);
   if (!development) notFound();
   const initialNav = parseDeepLink({ u, andar, bloco }, units);
@@ -68,6 +71,8 @@ export default async function DevelopmentPage({ params, searchParams }: PageProp
   // Só o GLB leve (camada 1) começa junto com o HTML. O de detalhes não é pré-carregado:
   // o viewer o pede depois que o prédio já está interativo, para não disputar banda.
   if (modelUrl) preload(modelUrl, { as: 'fetch', crossOrigin: 'anonymous' });
+  // Interiores (maquetes): só as URLs; o viewer baixa ao entrar num andar, sob demanda.
+  const interiors = interiorRefs(unitTypes, (path) => getAssetUrl(path, 'models'));
 
   return (
     <DevelopmentExplorer
@@ -76,6 +81,7 @@ export default async function DevelopmentPage({ params, searchParams }: PageProp
       modelUrl={modelUrl}
       detailModelUrl={detailModelUrl}
       viewerCameras={development.viewer_cameras}
+      interiors={interiors}
       initialUnits={units}
       initialNav={initialNav}
       contact={contact}

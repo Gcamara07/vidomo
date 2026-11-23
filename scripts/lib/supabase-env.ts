@@ -48,12 +48,18 @@ export async function developmentKeys(client: SupabaseClient, slug: string) {
   if (error) throw error;
   if (!dev) throw new Error(`Empreendimento "${slug}" não encontrado.`);
 
-  const [units, floors] = await Promise.all([
-    client.from('units').select('object_key').eq('development_id', dev.id),
+  const [units, floors, types] = await Promise.all([
+    client.from('units').select('object_key, unit_type_id').eq('development_id', dev.id),
     client.from('floors').select('object_key').eq('development_id', dev.id),
+    client
+      .from('unit_types')
+      .select('id, name, interior_model_path, interior_detail_model_path, interior_reference_unit')
+      .eq('development_id', dev.id),
   ]);
   if (units.error) throw units.error;
   if (floors.error) throw floors.error;
+  if (types.error) throw types.error;
+  const typeById = new Map(types.data.map((t) => [t.id as string, t]));
 
   return {
     development: dev as {
@@ -64,5 +70,17 @@ export async function developmentKeys(client: SupabaseClient, slug: string) {
     },
     unitKeys: units.data.map((u) => u.object_key as string),
     floorKeys: floors.data.map((f) => f.object_key as string),
+    /** Tipo de planta de cada unidade (nome; null = sem tipo). */
+    unitTypes: units.data.map((u) => ({
+      objectKey: u.object_key as string,
+      type: (typeById.get(u.unit_type_id as string)?.name as string | undefined) ?? null,
+    })),
+    /** Tipos de planta com os campos de interior. */
+    types: types.data.map((t) => ({
+      name: t.name as string,
+      interiorModelPath: t.interior_model_path as string | null,
+      interiorDetailModelPath: t.interior_detail_model_path as string | null,
+      referenceUnit: t.interior_reference_unit as string | null,
+    })),
   };
 }

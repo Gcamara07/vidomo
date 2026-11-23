@@ -19,7 +19,12 @@ import {
 import { BUILDING, searchFor, type NavState } from '@/lib/deep-link';
 import { EMPTY_FPS, addFpsSample, type FpsSummary } from '@/lib/fps-summary';
 import type { LeadSource } from '@/lib/lead-form';
-import type { PublicContact, PublicDevelopment, PublicUnit } from '@/lib/public-development';
+import {
+  unitTypeMap,
+  type PublicContact,
+  type PublicDevelopment,
+  type PublicUnit,
+} from '@/lib/public-development';
 import { useElementSize, useMediaQuery } from '@/lib/use-layout';
 import { useLiveUnitStatus, type LiveConnection } from '@/lib/use-live-unit-status';
 import { FilterBar } from './FilterBar';
@@ -59,6 +64,8 @@ export interface DevelopmentExplorerProps {
   detailModelUrl?: string | null;
   /** Câmeras do viewer cadastradas no empreendimento (ex.: vista inicial do condomínio). */
   viewerCameras?: PublicDevelopment['viewer_cameras'];
+  /** Interiores (maquetes) por nome do tipo de planta, URLs já resolvidas no servidor. */
+  interiors?: ViewerManifest['interiors'];
   initialUnits: PublicUnit[];
   /** Estado inicial vindo do link (?u= / ?andar=), já validado no servidor. */
   initialNav?: NavState;
@@ -76,6 +83,7 @@ export function DevelopmentExplorer({
   modelUrl,
   detailModelUrl = null,
   viewerCameras = null,
+  interiors,
   initialUnits,
   initialNav = BUILDING,
   contact = null,
@@ -113,9 +121,13 @@ export function DevelopmentExplorer({
             modelUrl,
             detailModelUrl: detailModelUrl ?? undefined,
             cameras: viewerCameras ?? undefined,
+            // Tipo de planta não muda com o tempo real: vem das unidades iniciais.
+            ...(interiors && Object.keys(interiors).length
+              ? { interiors, unitTypes: unitTypeMap(initialUnits) }
+              : {}),
           }
         : null,
-    [modelUrl, detailModelUrl, viewerCameras],
+    [modelUrl, detailModelUrl, viewerCameras, interiors, initialUnits],
   );
 
   // Derivados do mapa de status em tempo real.

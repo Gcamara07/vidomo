@@ -1,11 +1,13 @@
 /**
  * Leitura pública de um empreendimento (regra 4): só pelas funções
- * public_development / public_development_units / public_contact.
+ * public_development / public_development_units / public_development_unit_types /
+ * public_contact.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   UNIT_STATUSES,
   type CameraPreset,
+  type InteriorModelRef,
   type UnitStatus,
   type UnitStatusMap,
 } from '@vidomo/viewer/types';
@@ -50,6 +52,74 @@ export interface PublicUnit {
   price: number | null;
   /** 'from' = "a partir de"; 'exact' = preço da unidade; null = "Consulte condições". */
   price_kind: 'from' | 'exact' | null;
+}
+
+/** Cômodo de um tipo de planta (etiqueta nas coordenadas do interior, como no Blender). */
+export interface PublicRoom {
+  name: string;
+  area_m2: number;
+  x: number;
+  y: number;
+}
+
+/** Tipo de planta com interior e cômodos (public_development_unit_types). */
+export interface PublicUnitType {
+  name: string;
+  area_m2: number;
+  bedrooms: number;
+  suites: number | null;
+  /** GLB simples do interior (modo andar); null = tipo sem interior. */
+  interior_model_path: string | null;
+  /** GLB detalhado ("Ver apartamento"). */
+  interior_detail_model_path: string | null;
+  /** object_key da unidade de referência do interior. */
+  interior_reference_unit: string | null;
+  rooms: PublicRoom[];
+}
+
+export async function fetchPublicUnitTypes(
+  client: SupabaseClient,
+  slug: string,
+): Promise<PublicUnitType[]> {
+  const { data, error } = await client.rpc('public_development_unit_types', { p_slug: slug });
+  if (error) throw new Error(`public_development_unit_types: ${error.message}`);
+  return (data as PublicUnitType[]).map((t) => ({
+    ...t,
+    area_m2: Number(t.area_m2),
+    rooms: (t.rooms ?? []).map((r) => ({
+      name: r.name,
+      area_m2: Number(r.area_m2),
+      x: Number(r.x),
+      y: Number(r.y),
+    })),
+  }));
+}
+
+/**
+ * Interiores para o manifesto do viewer, por nome do tipo de planta (só tipos com
+ * interior). `resolve` monta a URL do arquivo (getAssetUrl; o viewer não monta URLs).
+ */
+export function interiorRefs(
+  types: PublicUnitType[],
+  resolve: (path: string) => string,
+): Record<string, InteriorModelRef> {
+  const out: Record<string, InteriorModelRef> = {};
+  for (const t of types) {
+    if (!t.interior_model_path || !t.interior_reference_unit) continue;
+    out[t.name] = {
+      simpleUrl: resolve(t.interior_model_path),
+      detailUrl: t.interior_detail_model_path ? resolve(t.interior_detail_model_path) : undefined,
+      referenceUnit: t.interior_reference_unit,
+    };
+  }
+  return out;
+}
+
+/** Tipo de planta de cada unidade (object_key → nome do tipo), para o manifesto. */
+export function unitTypeMap(units: Pick<PublicUnit, 'object_key' | 'unit_type_name'>[]) {
+  const out: Record<string, string> = {};
+  for (const u of units) if (u.unit_type_name) out[u.object_key] = u.unit_type_name;
+  return out;
 }
 
 export async function fetchPublicDevelopment(

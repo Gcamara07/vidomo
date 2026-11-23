@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   applyStatusMessage,
   countByStatus,
+  interiorRefs,
   toStatusMap,
+  unitTypeMap,
   type PublicUnit,
+  type PublicUnitType,
 } from './public-development';
 import { vistaUnit } from '@/test/units';
 
@@ -49,5 +52,41 @@ describe('mapa de status', () => {
     { object_key: 'TA__F01__U102', status: 'sold' },
   ])('ignora mensagem inválida, desconhecida ou repetida: %j', (payload) => {
     expect(applyStatusMessage(map, payload)).toBe(map);
+  });
+});
+
+describe('interiores no manifesto', () => {
+  const type = (name: string, interior: boolean): PublicUnitType => ({
+    name,
+    area_m2: 58,
+    bedrooms: 2,
+    suites: 1,
+    interior_model_path: interior ? `vista/${name}-simples.glb` : null,
+    interior_detail_model_path: interior ? `vista/${name}.glb` : null,
+    interior_reference_unit: interior ? 'TA__F02__U201' : null,
+    rooms: [],
+  });
+
+  it('só tipos com interior, com as URLs resolvidas por quem chama (getAssetUrl)', () => {
+    const refs = interiorRefs(
+      [type('Tipo A', true), type('Tipo C', false)],
+      (p) => `https://cdn/${p}`,
+    );
+    expect(refs).toEqual({
+      'Tipo A': {
+        simpleUrl: 'https://cdn/vista/Tipo A-simples.glb',
+        detailUrl: 'https://cdn/vista/Tipo A.glb',
+        referenceUnit: 'TA__F02__U201',
+      },
+    });
+  });
+
+  it('tipo de cada unidade (sem tipo fica de fora)', () => {
+    expect(
+      unitTypeMap([
+        { object_key: 'TA__F01__U101', unit_type_name: 'Tipo A' },
+        { object_key: 'TA__F01__U102', unit_type_name: null },
+      ]),
+    ).toEqual({ TA__F01__U101: 'Tipo A' });
   });
 });

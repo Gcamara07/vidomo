@@ -240,3 +240,29 @@ export function compareModel(
       !report.overSizeLimit,
   };
 }
+
+/**
+ * Confere um GLB de interior: objetos VIS__INT<tipo>_<MATERIAL>, com um piso de base
+ * (…_PISO, tingido pelo status). O encaixe é conferido no `model:validate` do prédio.
+ */
+export function checkInteriorModel(
+  meshNames: string[],
+  fileBytes: number,
+): { errors: string[]; warnings: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const pattern = /^VIS__INT[A-Z0-9]*_[A-Z0-9_]+$/;
+  const odd = meshNames.filter((n) => !pattern.test(n));
+  if (meshNames.length === 0) errors.push('O GLB não tem malhas.');
+  if (odd.length) {
+    warnings.push(
+      `${odd.length} objeto(s) fora do padrão VIS__INT<tipo>_<MATERIAL> (o viewer os desenha ` +
+        `como sólidos): ${odd.slice(0, 8).join(', ')}`,
+    );
+  }
+  if (!meshNames.some((n) => /^VIS__INT[A-Z0-9]*_PISO$/.test(n))) {
+    errors.push('Falta o piso de base (VIS__INT<tipo>_PISO), que recebe a cor do status.');
+  }
+  if (fileBytes > MAX_MODEL_BYTES) errors.push(`Arquivo acima de ${mb(MAX_MODEL_BYTES)} MB.`);
+  return { errors, warnings };
+}

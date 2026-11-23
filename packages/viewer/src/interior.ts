@@ -10,8 +10,17 @@
  */
 import { Color, Matrix4, Vector3, type Object3D } from 'three';
 import { partArrays, type PartArrays } from './batch';
-import type { PlanRect } from './fit';
-import { extractBuilding } from './scene-model';
+import {
+  exteriorSides,
+  fitInterior,
+  planTriangles,
+  rectFromPositions,
+  type FitResult,
+  type FitSubject,
+  type PlanRect,
+} from './fit';
+import { floorKeyOfUnit } from './naming';
+import { extractBuilding, type BuildingModel, type ScenePart } from './scene-model';
 
 export type InteriorRole = 'floor' | 'glass' | 'solid';
 
@@ -217,4 +226,41 @@ export function statusBand(
     },
     outline: new Float32Array(outline),
   };
+}
+
+/** Vértices de uma peça em coordenadas de mundo (3 por triângulo), sem contorno. */
+function worldPositions(part: ScenePart): Float32Array {
+  const pos = part.geometry.getAttribute('position');
+  const index = part.geometry.index;
+  const n = index ? index.count : pos.count;
+  const out = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    tmp.fromBufferAttribute(pos, index ? index.getX(i) : i).applyMatrix4(part.matrix);
+    tmp.toArray(out, i * 3);
+  }
+  return out;
+}
+
+/**
+ * Encaixe do interior numa unidade, direto do modelo do prédio (caixas UNIT__ e lajes):
+ * o mesmo cálculo do modo andar, para o "Ver apartamento" mostrar a unidade espelhada ou
+ * girada como ela é. null se a unidade, a referência ou a laje não estiverem no modelo.
+ */
+export function unitFitFromModel(
+  model: BuildingModel,
+  unitKey: string,
+  referenceKey: string,
+): { fit: FitResult; rect: PlanRect } | null {
+  const subject = (key: string): FitSubject | null => {
+    const unit = model.units.find((p) => p.objectKey === key);
+    const fk = floorKeyOfUnit(key);
+    const slab = fk ? model.floors.find((p) => p.objectKey === fk) : undefined;
+    if (!unit || !slab) return null;
+    const rect = rectFromPositions(worldPositions(unit));
+    return { rect, exterior: exteriorSides(rect, planTriangles(worldPositions(slab))) };
+  };
+  const ref = subject(referenceKey);
+  const target = subject(unitKey);
+  if (!ref || !target) return null;
+  return { fit: fitInterior(ref, target), rect: target.rect };
 }

@@ -4,6 +4,7 @@ import type { UnitStatus } from '@vidomo/viewer/types';
 import dynamic from 'next/dynamic';
 import { useRef, useState, useSyncExternalStore } from 'react';
 import { getAssetUrl } from '@/lib/assets';
+import { shareUrl } from '@/lib/deep-link';
 import {
   interestKind,
   similarInterestMessage,
@@ -51,8 +52,11 @@ export function UnitDetails({
   contact,
   leadSource,
   onClose,
+  onViewApartment,
 }: {
   unit: PublicUnit;
+  /** Abre o "Ver apartamento" (só quando o tipo da unidade tem interior). */
+  onViewApartment?: () => void;
   /** Empreendimento com vários blocos: o bloco entra nos textos ("201 do Bloco 09"). */
   manyTowers?: boolean;
   /** Status ao vivo (pode ter mudado depois que a página carregou). */
@@ -162,6 +166,7 @@ export function UnitDetails({
           contact={contact}
           interestRef={interestRef}
           onInterest={openForm}
+          onViewApartment={onViewApartment}
         />
       )}
     </section>
@@ -180,6 +185,7 @@ function UnitInfo({
   contact,
   interestRef,
   onInterest,
+  onViewApartment,
 }: {
   unit: PublicUnit;
   phrase: string;
@@ -191,6 +197,7 @@ function UnitInfo({
   contact: PublicContact | null;
   interestRef: React.RefObject<HTMLButtonElement | null>;
   onInterest: () => void;
+  onViewApartment?: () => void;
 }) {
   return (
     <>
@@ -217,6 +224,23 @@ function UnitInfo({
         interestRef={interestRef}
         onInterest={onInterest}
       />
+
+      {onViewApartment && (
+        <button
+          type="button"
+          className={`${styles.planPlaceholder} ${styles.viewApartment}`}
+          onClick={onViewApartment}
+        >
+          <svg viewBox="0 0 120 70" aria-hidden className={styles.planSketch}>
+            <rect x="4" y="4" width="112" height="62" />
+            <path d="M4 34h52M56 4v62M84 34v32M56 34h28" />
+          </svg>
+          <span className={styles.viewApartmentText}>
+            <span className={styles.viewApartmentLabel}>Ver apartamento</span>
+            <span className={styles.viewApartmentHint}>maquete 3D com os ambientes</span>
+          </span>
+        </button>
+      )}
 
       <dl className={styles.facts}>
         <div>
@@ -247,7 +271,7 @@ function UnitInfo({
         </div>
       </dl>
 
-      <PlanImage unit={unit} />
+      <PlanImage unit={unit} onViewApartment={onViewApartment} />
     </>
   );
 }
@@ -322,8 +346,12 @@ function ContactActions({
   );
 }
 
-/** Planta 2D do Storage (bucket plans) ou placeholder no estilo da marca. */
-function PlanImage({ unit }: { unit: PublicUnit }) {
+/**
+ * Planta 2D do Storage (bucket plans) ou placeholder no estilo da marca. O placeholder só
+ * aparece para tipos sem interior (com interior, o "Ver apartamento" fica acima).
+ */
+function PlanImage({ unit, onViewApartment }: { unit: PublicUnit; onViewApartment?: () => void }) {
+  if (!unit.plan_image_path && onViewApartment) return null;
   if (unit.plan_image_path) {
     return (
       <figure className={styles.plan}>
@@ -351,7 +379,8 @@ function PlanImage({ unit }: { unit: PublicUnit }) {
 function ShareButton({ title }: { title: string }) {
   const [copied, setCopied] = useState(false);
   const share = async () => {
-    const url = window.location.href;
+    // A vista atual, sem o "Ver apartamento" (?ver=1): o link da ficha continua ?u=802.
+    const url = shareUrl(window.location.href);
     const canShare =
       typeof navigator.share === 'function' && window.matchMedia('(pointer: coarse)').matches;
     try {

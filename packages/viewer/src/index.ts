@@ -11,6 +11,8 @@ export {
   type ViewerStats,
   type ViewerViewState,
 } from './Viewer';
+export { ApartmentViewer, type ApartmentViewerProps, type RoomLabel } from './ApartmentViewer';
+export { layoutLabels, type LabelInput, type LabelPlacement } from './labels';
 export { computeFloorLevels, type FloorLevel } from './floors';
 export {
   applyFit,

@@ -24,6 +24,7 @@ import {
   type PublicContact,
   type PublicDevelopment,
   type PublicUnit,
+  type PublicUnitType,
 } from '@/lib/public-development';
 import { useElementSize, useMediaQuery } from '@/lib/use-layout';
 import { useLiveUnitStatus, type LiveConnection } from '@/lib/use-live-unit-status';
@@ -43,6 +44,11 @@ import styles from './explorer.module.css';
 const Viewer = dynamic(() => import('./ClientOnlyViewer'), {
   loading: () => null,
 });
+// "Ver apartamento": só quando o comprador abre (ou chega por ?ver=1).
+const ApartmentOverlay = dynamic(
+  () => import('./ApartmentOverlay').then((m) => m.ApartmentOverlay),
+  { loading: () => null },
+);
 
 /** Limite para ligar o tempo real mesmo se o 3D ainda não estiver pronto. */
 const LIVE_FALLBACK_MS = 6000;
@@ -66,6 +72,8 @@ export interface DevelopmentExplorerProps {
   viewerCameras?: PublicDevelopment['viewer_cameras'];
   /** Interiores (maquetes) por nome do tipo de planta, URLs já resolvidas no servidor. */
   interiors?: ViewerManifest['interiors'];
+  /** Tipos de planta com os cômodos ("Ver apartamento"). */
+  unitTypes?: PublicUnitType[];
   initialUnits: PublicUnit[];
   /** Estado inicial vindo do link (?u= / ?andar=), já validado no servidor. */
   initialNav?: NavState;
@@ -84,6 +92,7 @@ export function DevelopmentExplorer({
   detailModelUrl = null,
   viewerCameras = null,
   interiors,
+  unitTypes = [],
   initialUnits,
   initialNav = BUILDING,
   contact = null,
@@ -104,6 +113,8 @@ export function DevelopmentExplorer({
   const [activeTower, setActiveTower] = useState<string | null>(initialNav.activeTower);
   const [activeFloor, setActiveFloor] = useState<string | null>(initialNav.activeFloor);
   const [selected, setSelected] = useState<string | null>(initialNav.selected);
+  // "Ver apartamento" aberto para a unidade selecionada (?ver=1 no link).
+  const [apartment, setApartment] = useState(initialNav.apartment === true);
   const [filters, setFilters] = useState<Filters>(() => defaultFilters(initialUnits));
 
   const [ready, setReady] = useState(false);
@@ -170,11 +181,21 @@ export function DevelopmentExplorer({
   const unitsByKey = useMemo(() => new Map(units.map((u) => [u.object_key, u])), [units]);
   const selectedUnit = selected ? unitsByKey.get(selected) : undefined;
   const selectedStatus = selected ? statusMap[selected] : undefined;
+  // O tipo da unidade selecionada tem interior detalhado? (botão e camada)
+  const selectedType = selectedUnit?.unit_type_name
+    ? unitTypes.find((t) => t.name === selectedUnit.unit_type_name)
+    : undefined;
+  const canViewApartment =
+    !!manifest && !!selectedType && !!interiors?.[selectedType.name]?.detailUrl;
+  const apartmentOpen = apartment && canViewApartment;
 
   // Toque no 3D. No modo edifício (um bloco) ou no modo bloco, o viewer também sugere o
   // andar da unidade (onSelectFloor): entra no andar e a ficha abre. Com vários blocos, o
   // toque na vista geral sugere o bloco (onSelectTower).
-  const onSelectUnit = useCallback((key: string | null) => setSelected(key), []);
+  const onSelectUnit = useCallback((key: string | null) => {
+    setSelected(key);
+    setApartment(false);
+  }, []);
   const onSelectFloor = useCallback((key: string) => {
     setActiveTower(parseFloorKey(key)?.tower ?? null);
     setActiveFloor(key);
@@ -198,7 +219,7 @@ export function DevelopmentExplorer({
   useEffect(() => {
     const search = searchFor(
       window.location.search,
-      { mode, activeTower, activeFloor, selected },
+      { mode, activeTower, activeFloor, selected, apartment: apartmentOpen },
       units,
     );
     if (search !== window.location.search) {
@@ -208,7 +229,7 @@ export function DevelopmentExplorer({
         `${window.location.pathname}${search}${window.location.hash}`,
       );
     }
-  }, [mode, activeTower, activeFloor, selected, units]);
+  }, [mode, activeTower, activeFloor, selected, apartmentOpen, units]);
 
   const onToggleStatus = useCallback(
     (s: UnitStatus) => setFilters((f) => ({ ...f, statuses: toggleIn(f.statuses, s) })),
@@ -271,12 +292,17 @@ export function DevelopmentExplorer({
         contact={contact}
         leadSource={leadSource}
         onClose={() => setSelected(null)}
+        onViewApartment={canViewApartment ? () => setApartment(true) : undefined}
       />
     ) : null;
 
   return (
     <div className={styles.root} data-viewer-ready={ready || undefined} data-mode={mode}>
-      <section className={styles.stage} aria-label={`Modelo 3D do ${name}`}>
+      <section
+        className={styles.stage}
+        aria-label={`Modelo 3D do ${name}`}
+        inert={apartmentOpen || undefined}
+      >
         {manifest && !error && (
           <Viewer
             key={attempt}
@@ -320,7 +346,7 @@ export function DevelopmentExplorer({
         )}
       </section>
 
-      <aside ref={panelRef} className={styles.panel}>
+      <aside ref={panelRef} className={styles.panel} inert={apartmentOpen || undefined}>
         <header className={styles.head}>
           <h1 className={styles.title}>{name}</h1>
           <p className={styles.live} data-state={connection}>
@@ -353,7 +379,12 @@ export function DevelopmentExplorer({
       </aside>
 
       {/* Celular: faixa de andares + folha inferior. Desktop: coluna de andares. */}
-      <div ref={dockRef} className={styles.dock} data-many={manyTowers || undefined}>
+      <div
+        ref={dockRef}
+        className={styles.dock}
+        data-many={manyTowers || undefined}
+        inert={apartmentOpen || undefined}
+      >
         <p className={`${styles.disclaimer} ${styles.disclaimerMobile}`}>Imagens ilustrativas</p>
         <FloorNav
           towers={towers}
@@ -369,6 +400,20 @@ export function DevelopmentExplorer({
         />
         {!isDesktop && details}
       </div>
+
+      {apartmentOpen && manifest && selectedUnit && selectedStatus && selectedType && (
+        <ApartmentOverlay
+          manifest={manifest}
+          unit={selectedUnit}
+          status={selectedStatus}
+          rooms={selectedType.rooms}
+          manyTowers={manyTowers}
+          slug={slug}
+          contact={contact}
+          leadSource={leadSource}
+          onClose={() => setApartment(false)}
+        />
+      )}
     </div>
   );
 }

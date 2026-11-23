@@ -35,3 +35,30 @@ export function positionText(u: Pick<PublicUnit, 'facade' | 'frontage'>): string
   const parts = [u.facade ? `Face ${u.facade}` : null, u.frontage].filter(Boolean);
   return parts.length ? parts.join(' · ') : null;
 }
+
+/** Espaço que não quebra (entre o número e "m²"). */
+const NBSP = String.fromCharCode(160);
+const m2 = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
+
+/** Área em m² sem casas desnecessárias: "58 m²", "20,9 m²" (espaço que não quebra). */
+export function areaText(value: number): string {
+  return `${m2.format(value)}${NBSP}m²`;
+}
+
+/**
+ * Título do "Ver apartamento": "Unidade 802 · 2 dormitórios (1 suíte) · 58 m²".
+ * Com vários blocos, o bloco entra depois do código ("Unidade 201 do Bloco 09 · …").
+ */
+export function apartmentHeading(
+  u: Pick<PublicUnit, 'code' | 'tower_name' | 'bedrooms' | 'suites' | 'area_m2'>,
+  manyTowers = false,
+): string {
+  const parts = [`Unidade ${u.code}${manyTowers ? ` do ${u.tower_name}` : ''}`];
+  if (u.bedrooms !== null) {
+    const dorms = `${u.bedrooms} ${u.bedrooms === 1 ? 'dormitório' : 'dormitórios'}`;
+    const suites = u.suites ? ` (${u.suites} ${u.suites === 1 ? 'suíte' : 'suítes'})` : '';
+    parts.push(dorms + suites);
+  }
+  if (u.area_m2 !== null) parts.push(areaText(u.area_m2));
+  return parts.join(' · ');
+}

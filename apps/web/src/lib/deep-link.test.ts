@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { blockUnit, vistaUnit, withLinks } from '@/test/units';
-import { BUILDING, parseDeepLink, searchFor, type NavState } from './deep-link';
+import { BUILDING, parseDeepLink, searchFor, shareUrl, type NavState } from './deep-link';
 import { positionText, priceText } from './unit-format';
 
 // Residencial Vista: uma torre (TA), códigos únicos.
@@ -43,6 +43,27 @@ describe('parseDeepLink: Residencial Vista (links antigos continuam)', () => {
   it('?u= tem prioridade sobre ?andar= e aceita lista (primeiro valor)', () => {
     expect(parseDeepLink({ u: ['1004', '101'], andar: '1' }, units).selected).toBe(
       'TA__F10__U1004',
+    );
+  });
+});
+
+describe('"Ver apartamento" (?ver=1)', () => {
+  it('?u=802&ver=1 abre a ficha com o apartamento; ?ver=1 sem unidade é ignorado', () => {
+    expect(parseDeepLink({ u: '802', ver: '1' }, units)).toEqual({
+      ...floorOf('TA', 'TA__F08', 'TA__F08__U802'),
+      apartment: true,
+    });
+    expect(parseDeepLink({ u: '802', ver: 'sim' }, units).apartment).toBeUndefined();
+    expect(parseDeepLink({ andar: '8', ver: '1' }, units)).toEqual(floorOf('TA', 'TA__F08'));
+  });
+
+  it('a URL leva ?ver=1 só com o apartamento aberto; compartilhar tira o ?ver', () => {
+    const nav = floorOf('TA', 'TA__F08', 'TA__F08__U802');
+    expect(searchFor('?debug=1', { ...nav, apartment: true }, units)).toBe('?debug=1&u=802&ver=1');
+    expect(searchFor('?u=802&ver=1', nav, units)).toBe('?u=802');
+    expect(searchFor('?u=802&ver=1', BUILDING, units)).toBe('');
+    expect(shareUrl('https://vidomo.app/e/residencial-vista?u=802&ver=1')).toBe(
+      'https://vidomo.app/e/residencial-vista?u=802',
     );
   });
 });

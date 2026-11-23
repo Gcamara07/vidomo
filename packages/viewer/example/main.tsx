@@ -11,6 +11,7 @@
  *   ?floor=B09__F02    abre no modo andar (útil para medir fps com `pnpm measure --url`)
  *   ?cam=px,py,pz,tx,ty,tz  câmera inicial (posição e alvo), para capturas reproduzíveis
  *   ?sel=TA__F05__U504 abre com a unidade selecionada (sem entrar no andar)
+ *   ?ver=TA__F08__U803 abre o "Ver apartamento" da unidade
  *   ?interior=none     sem maquetes no modo andar (só o Vista tem interiores: GLBs de
  *                      `pnpm model:compress modelos/interior-tipo-a-simples.glb` etc.)
  * Controles: vista geral / bloco / andar, seletor de bloco e de andar, rótulos dos blocos,
@@ -27,6 +28,7 @@ import {
 } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
+  ApartmentViewer,
   BRAND,
   STATUS_LABELS,
   UNIT_STATUSES,
@@ -35,6 +37,7 @@ import {
   swatchBackground,
   unitObjectKey,
   floorObjectKey,
+  type RoomLabel,
   type UnitStatus,
   type UnitStatusMap,
   type ViewerManifest,
@@ -108,6 +111,29 @@ const UNIT_KEYS = demo.towers.flatMap((t) =>
     Array.from({ length: demo.perFloor }, (_, p) => unitObjectKey(t, f + 1, (f + 1) * 100 + p + 1)),
   ).flat(),
 );
+/** Cômodos do Vista (como no seed), para o "Ver apartamento" do exemplo. */
+const ROOMS: Record<string, RoomLabel[]> = {
+  A: [
+    { name: 'Estar · jantar', area_m2: 20.9, x: -3.3, y: 5.0 },
+    { name: 'Varanda', area_m2: 10.7, x: -5.2, y: 9.4 },
+    { name: 'Suíte', area_m2: 8.8, x: -8.9, y: 7.0 },
+    { name: 'Quarto 2', area_m2: 7.5, x: -8.0, y: 2.9 },
+    { name: 'Cozinha · serviço', area_m2: 6.8, x: -3.7, y: 2.9 },
+    { name: 'Banho social', area_m2: 4.2, x: -5.8, y: 3.1 },
+    { name: 'Banho da suíte', area_m2: 2.7, x: -7.0, y: 5.85 },
+  ],
+  B: [
+    { name: 'Estar · jantar', area_m2: 21.6, x: 1.2, y: 6.0 },
+    { name: 'Varanda', area_m2: 14.6, x: 6.6, y: 9.35 },
+    { name: 'Cozinha · serviço', area_m2: 12.0, x: 0.9, y: 3.0 },
+    { name: 'Suíte', area_m2: 10.0, x: 8.3, y: 5.7 },
+    { name: 'Quarto 2', area_m2: 9.0, x: 5.0, y: 6.6 },
+    { name: 'Quarto 3', area_m2: 9.0, x: 8.0, y: 3.0 },
+    { name: 'Banho social', area_m2: 3.4, x: 5.5, y: 2.6 },
+    { name: 'Banho da suíte', area_m2: 2.7, x: 7.2, y: 7.55 },
+  ],
+};
+
 if (demo.interiors && demo.typeOf && params.get('interior') !== 'none') {
   manifest.interiors = demo.interiors;
   manifest.unitTypes = Object.fromEntries(UNIT_KEYS.map((k) => [k, demo.typeOf!(k)]));
@@ -159,6 +185,8 @@ function App() {
   const [auto, setAuto] = useState(false);
   const [readyMs, setReadyMs] = useState<number | null>(null);
   const [stats, setStats] = useState<ViewerStats | null>(null);
+  const [apartment, setApartment] = useState<string | null>(params.get('ver'));
+  const [spin, setSpin] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewerMode>(
     INITIAL_FLOOR ? 'floor' : INITIAL_TOWER ? 'tower' : 'building',
@@ -429,6 +457,38 @@ function App() {
           )}
         </div>
       </section>
+      {selected && manifest.unitTypes?.[selected] && !apartment && (
+        <button
+          type="button"
+          onClick={() => setApartment(selected)}
+          style={{ ...buttonStyle, position: 'absolute', top: 44, right: 16 }}
+        >
+          Ver apartamento
+        </button>
+      )}
+      {apartment && manifest.unitTypes?.[apartment] && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 10, background: BRAND.papel }}>
+          <ApartmentViewer
+            manifest={manifest}
+            unitKey={apartment}
+            rooms={ROOMS[manifest.unitTypes[apartment]!] ?? []}
+            autoRotate={spin}
+            onInteract={() => setSpin(false)}
+            onReady={() => performance.mark('vidomo:apartment-ready')}
+          />
+          <div
+            style={{ position: 'absolute', top: 12, left: 16, right: 16, display: 'flex', gap: 8 }}
+          >
+            <span style={{ ...mono, flex: 1 }}>{apartment}</span>
+            <button type="button" style={buttonStyle} onClick={() => setSpin((v) => !v)}>
+              {spin ? 'Parar giro' : 'Girar'}
+            </button>
+            <button type="button" style={buttonStyle} onClick={() => setApartment(null)}>
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

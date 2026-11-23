@@ -2,6 +2,8 @@
  * Links compartilháveis da página pública:
  *   /e/<slug>?u=802              → andar da unidade, com a ficha aberta
  *   /e/<slug>?u=B09-201          → idem, quando o código da unidade se repete entre blocos
+ *   /e/<slug>?u=802&ver=1        → idem, com o "Ver apartamento" aberto (se o tipo tiver
+ *                                  interior; senão, só a ficha)
  *   /e/<slug>?andar=8            → o andar (empreendimento de um bloco só)
  *   /e/<slug>?bloco=09           → o bloco (aceita o nome curto "09", o código "B09" ou "9")
  *   /e/<slug>?bloco=09&andar=2   → o andar do bloco
@@ -21,6 +23,8 @@ export interface NavState {
   activeFloor: string | null;
   /** object_key da unidade selecionada. */
   selected: string | null;
+  /** "Ver apartamento" aberto (só com unidade selecionada). */
+  apartment?: boolean;
 }
 
 export const BUILDING: NavState = {
@@ -53,13 +57,15 @@ function floorNav(unit: PublicUnit, selected: string | null): NavState {
 }
 
 export function parseDeepLink(
-  params: { u?: Param; andar?: Param; bloco?: Param },
+  params: { u?: Param; andar?: Param; bloco?: Param; ver?: Param },
   units: PublicUnit[],
 ): NavState {
   const code = first(params.u);
   if (code) {
     const unit = unitFromParam(code, units);
-    return unit ? floorNav(unit, unit.object_key) : BUILDING;
+    if (!unit) return BUILDING;
+    const nav = floorNav(unit, unit.object_key);
+    return first(params.ver) === '1' ? { ...nav, apartment: true } : nav;
   }
 
   const many = hasManyTowers(units);
@@ -92,6 +98,7 @@ export function searchFor(current: string, nav: NavState, units: PublicUnit[]): 
   params.delete('u');
   params.delete('andar');
   params.delete('bloco');
+  params.delete('ver');
   const many = hasManyTowers(units);
   const unit = nav.selected ? units.find((u) => u.object_key === nav.selected) : undefined;
   const towerUnit = nav.activeTower
@@ -99,6 +106,7 @@ export function searchFor(current: string, nav: NavState, units: PublicUnit[]): 
     : undefined;
   if (unit) {
     params.set('u', unit.link_code);
+    if (nav.apartment) params.set('ver', '1');
   } else if (nav.mode === 'floor' && nav.activeFloor) {
     const u = units.find((x) => floorKeyOf(x) === nav.activeFloor);
     if (u) {
@@ -110,4 +118,11 @@ export function searchFor(current: string, nav: NavState, units: PublicUnit[]): 
   }
   const s = params.toString();
   return s ? `?${s}` : '';
+}
+
+/** Link de compartilhar da ficha: a vista atual sem o "Ver apartamento" (?ver=). */
+export function shareUrl(href: string): string {
+  const url = new URL(href);
+  url.searchParams.delete('ver');
+  return url.toString();
 }

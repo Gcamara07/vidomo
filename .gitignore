@@ -48,4 +48,5 @@ modelos/teste-blocos*
 modelos/referencias-blocos/
 # Referências visuais dos interiores (só para o modelador)
 modelos/referencias-interior/
+modelos/referencias-jda/
 supabase/seeds/local/

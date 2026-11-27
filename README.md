@@ -406,7 +406,8 @@ pnpm db:reset && pnpm model:upload   # volta ao modelo real
 | Supabase            | projeto `vidomo`, ref. `msqdndtgpjoiipxwkwno`, região us-east-1         |
 | Referência da marca | `/dev/marca` (rota interna, `noindex`)                                  |
 
-**Sem dados de produção**: só a Construtora Exemplo e o Residencial Vista.
+**Sem dados de produção**: só a Construtora Exemplo, o Residencial Vista e o Residencial Jardim
+das Águas (segundo demo, 6 blocos: https://www.vidomo.com.br/e/jardim-das-aguas).
 
 > ⏸️ **O projeto gratuito do Supabase pausa após 7 dias sem uso.** Pausado, a demo abre
 > sem dados e sem 3D. Para reativar: painel do Supabase → projeto → **Restore project**
@@ -543,6 +544,23 @@ pnpm model:upload scripts/out/interior-tipo-b.glb --layer interior-detail --type
 pnpm exec supabase db query --remote -f supabase/demo-seed.sql   # passa a apontar para eles
 ```
 
+**Empreendimento novo** (ex.: Jardim das Águas, 27/11/2026): o `model:upload` lê o cadastro do
+remoto, então aqui a ordem é o `demo-seed.sql` primeiro e o upload logo em seguida (a página
+nova fica sem 3D só nesse intervalo; os outros empreendimentos não mudam):
+
+```bash
+pnpm exec supabase db query --remote -f supabase/demo-seed.sql
+pnpm model:upload scripts/out/jardim-das-aguas-leve.glb --slug jardim-das-aguas
+pnpm model:upload scripts/out/jardim-das-aguas-detalhes.glb --slug jardim-das-aguas --layer detail
+pnpm model:upload scripts/out/jda-interior-tipo-a-simples.glb --slug jardim-das-aguas --layer interior --type "Tipo A"
+# … e os outros 7 interiores (--layer interior | interior-detail, --type "Tipo A", "Tipo B",
+#   "Tipo A térreo com quintal", "Tipo B térreo com quintal")
+```
+
+O seed do Jardim das Águas é gerado: `supabase/seeds/jardim-das-aguas.json` →
+`pnpm model:seed modelos/jardim-das-aguas-leve.glb --config supabase/seeds/jardim-das-aguas.json --out supabase/seeds/jardim-das-aguas.sql`;
+o mesmo bloco vai copiado no fim do `demo-seed.sql`.
+
 O upload valida o GLB antes de enviar (camada leve: contra as unidades do remoto; interior:
 nomes `VIS__INT…` e piso de base).
 
@@ -603,6 +621,26 @@ leve passou de 18 KB para 118 KB (fachada com janelas e `VIDRO__`, aceito até +
 maquetes 210 KB, apartamento 552 KB. JS inicial da página: 153,3 KB gzip; viewer/three.js:
 295,8 KB. `pnpm test:remote`: 30 de 30. **Nova referência do prédio interativo publicado:
 1,74 s** (4G rápido, mediana de 9); as próximas medições comparam com ela.
+
+**Residencial Jardim das Águas (segundo demo, 6 blocos), 27/11/2026, 4G rápido, mediana de 9,
+site publicado** (`--unit B03-204`):
+
+| Medida                              | Vista (ref. 1,74 s) | Jardim das Águas | Jardim das Águas, CPU 4× |
+| ----------------------------------- | ------------------- | ---------------- | ------------------------ |
+| Interativo                          | 1,76 s (+1 %)       | 2,30 s           | 2,60 s                   |
+| Detalhes na tela                    | 2,75 s              | 4,05 s           | 6,84 s                   |
+| Maquetes, 1ª entrada num andar      | 0,74 s              | 0,98 s           | 1,23 s                   |
+| Vista geral → bloco / bloco → andar | —                   | 0,53 / 0,54 s    | 0,61 / 0,63 s            |
+| Andar → andar (câmera / maquetes)   | 0,56 / 0,04 s       | 0,58 / 0,07 s    | 0,85 / 0,31 s            |
+| "Ver apartamento" aberto            | 0,85 s              | 0,94 s           | 3,21 s                   |
+| fps (prédio, andar, apartamento)    | 60                  | 60               | 60                       |
+
+GLBs do Jardim das Águas: leve 257 KB, detalhes 1,14 MB, maquetes 265 KB, apartamento 634 KB.
+Interativo no Jardim das Águas: de 1,96 a 5,22 s entre execuções (uma execução com FCP de 4 s,
+de rede); no build local, 1,92 s. O "Ver apartamento" com CPU 4× disputa o processador com a
+camada de detalhes do prédio (1,14 MB, 113 mil triângulos), que ainda está carregando quando a
+ficha abre: esperando os detalhes terminarem antes do toque, cai de 3,09 s para 1,68 s no build
+local (Vista: 1,45 s). `pnpm test:remote`: 34 de 34 (4 novos do Jardim das Águas).
 
 No build local (`next start`, porta 3100) o Bloco 2 mede 1,66 s contra 1,53 s da referência
 (`0b948ff`) medida no mesmo momento. A diferença vem do HTTP/1.1 local: a página passou a

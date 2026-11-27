@@ -119,6 +119,70 @@ describe('leitura anônima pela função pública', () => {
   });
 });
 
+describe('Residencial Jardim das Águas (segundo demo, 6 blocos)', () => {
+  const JDA = 'jardim-das-aguas';
+
+  it('public_development devolve as duas camadas e a câmera inicial', async () => {
+    const { data, error } = await anon.rpc('public_development', { p_slug: JDA });
+    expect(error).toBeNull();
+    expect(data).toEqual([
+      {
+        slug: JDA,
+        name: 'Residencial Jardim das Águas',
+        model_path: 'jardim-das-aguas/jardim-das-aguas-leve.glb',
+        detail_model_path: 'jardim-das-aguas/jardim-das-aguas-detalhes.glb',
+        viewer_cameras: { default: { position: [0, 336, 250], target: [0, 0, 8] } },
+      },
+    ]);
+  });
+
+  it('96 unidades em 6 blocos, com livres em todos; vendida sem preço', async () => {
+    const { data, error } = await anon.rpc('public_development_units', { p_slug: JDA });
+    expect(error).toBeNull();
+    const rows = data as { tower_code: string; status: string; price: number | null }[];
+    expect(rows).toHaveLength(96);
+    const towers = [...new Set(rows.map((r) => r.tower_code))].sort();
+    expect(towers).toEqual(['B01', 'B02', 'B03', 'B04', 'B05', 'B06']);
+    for (const t of towers) {
+      expect(
+        rows.some((r) => r.tower_code === t && r.status === 'available'),
+        t,
+      ).toBe(true);
+    }
+    for (const r of rows) if (r.status === 'sold') expect(r.price).toBeNull();
+  });
+
+  it('os 4 tipos com interior e cômodos', async () => {
+    const { data, error } = await anon.rpc('public_development_unit_types', { p_slug: JDA });
+    expect(error).toBeNull();
+    const types = data as { name: string; interior_reference_unit: string; rooms: unknown[] }[];
+    const rows = [...types]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => [t.name, t.interior_reference_unit, t.rooms.length]);
+    expect(rows).toEqual([
+      ['Tipo A', 'B01__F02__U201', 6],
+      ['Tipo A térreo com quintal', 'B01__F02__U201', 6],
+      ['Tipo B', 'B01__F02__U202', 8],
+      ['Tipo B térreo com quintal', 'B01__F02__U202', 8],
+    ]);
+  });
+
+  it('os 10 GLBs estão no bucket público', async () => {
+    const interiors = ['a', 'b'].flatMap((t) =>
+      ['', '-terreo'].flatMap((s) => [
+        `jda-interior-tipo-${t}${s}-simples.glb`,
+        `jda-interior-tipo-${t}${s}.glb`,
+      ]),
+    );
+    for (const f of ['jardim-das-aguas-leve.glb', 'jardim-das-aguas-detalhes.glb', ...interiors]) {
+      const res = await fetch(`${url}/storage/v1/object/public/models/${JDA}/${f}`, {
+        method: 'HEAD',
+      });
+      expect(res.status, f).toBe(200);
+    }
+  });
+});
+
 describe('anônimo sem acesso direto', () => {
   it.each([
     'units',

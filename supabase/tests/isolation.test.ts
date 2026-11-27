@@ -210,10 +210,17 @@ describe('cômodos e interiores (unit_type_rooms, unit_types): org B contra a or
     await service.from('unit_type_rooms').delete().eq('unit_type_id', typeB.id);
   });
 
-  it('admin A lê os 15 cômodos da própria organização', async () => {
+  it('admin A lê todos os cômodos da própria organização (Vista e Jardim das Águas)', async () => {
     const { data, error } = await adminA.from('unit_type_rooms').select('organization_id');
     expect(error).toBeNull();
-    expect(data).toHaveLength(15);
+    const { count } = await service
+      .from('unit_type_rooms')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', devA.organization_id);
+    // 15 do Vista + 28 do Jardim das Águas no seed local.
+    expect(count).toBeGreaterThanOrEqual(15);
+    expect(data).toHaveLength(count!);
+    expect(data!.every((r) => r.organization_id === devA.organization_id)).toBe(true);
   });
 
   it('admin B não enxerga cômodos da org A, nem pelo id', async () => {

@@ -1,0 +1,139 @@
+{
+  "organizationId": "a0000000-0000-4000-8000-0000000000a0",
+  "slug": "jardim-das-aguas",
+  "name": "Residencial Jardim das Águas",
+  "status": "published",
+  "priceDisplay": "from",
+  "modelPath": "jardim-das-aguas/jardim-das-aguas-leve.glb",
+  "detailModelPath": "jardim-das-aguas/jardim-das-aguas-detalhes.glb",
+  "headerNote": "Versionado. Carregado pelo `supabase db reset` (local) e copiado no fim do supabase/demo-seed.sql (remoto). Não edite à mão: mude supabase/seeds/jardim-das-aguas.json e gere de novo.",
+  "notes": [
+    "",
+    "Dados ainda sem campo no banco (não aparecem na página; ficam aqui para um bloco futuro):",
+    "  Cidade: Araraquara/SP",
+    "  Endereço: Rua Exemplo de Demonstração, 100 — Jardim Fictício, Araraquara/SP",
+    "            (empreendimento demonstrativo, endereço fictício)",
+    "  Chamada: 6 blocos · 96 apartamentos · lazer completo",
+    "  Áreas comuns (AMENITY__ no modelo, só no 3D):",
+    "    PORTARIA       Portaria 24 h, com controle de acesso de pedestres e veículos",
+    "    SALAO          Salão de festas envidraçado",
+    "    CHURRASQUEIRA  Espaço gourmet com churrasqueira",
+    "    PISCINA        Piscina adulto e infantil, com deck e solário",
+    "    PLAYGROUND     Playground",
+    "    PET            Pet place",
+    "    QUADRA         Quadra poliesportiva",
+    "",
+    "Preços fictícios e exatos (4º andar R$ 3.000 a menos: sem elevador). Portaria e rua ao sul:",
+    "finais 3 e 4 = frente, finais 1 e 2 = fundos."
+  ],
+  "viewerCameras": {
+    "default": { "position": [0, 336, 250], "target": [0, 0, 8] }
+  },
+  "tower": { "name": "Bloco {num}", "shortName": "{num}" },
+  "floorLabels": { "1": "Térreo", "2": "2º", "3": "3º", "4": "4º" },
+  "priceVariation": 0,
+  "frontageByFacade": { "sul": "frente", "norte": "fundos" },
+  "statusCounts": {
+    "total": { "available": 43, "reserved": 10, "negotiating": 8, "sold": 29, "unavailable": 6 },
+    "byFloor": {
+      "1": { "available": 8, "reserved": 2, "negotiating": 2, "sold": 10, "unavailable": 2 }
+    },
+    "minAvailablePerTower": 1
+  },
+  "unitTypes": [
+    {
+      "name": "Tipo A",
+      "area_m2": 46,
+      "bedrooms": 2,
+      "suites": 0,
+      "floors": [2, 3, 4],
+      "finals": ["1", "3"],
+      "basePrice": 235000,
+      "floorPriceAdjust": { "4": -3000 },
+      "interior": {
+        "modelPath": "jardim-das-aguas/jda-interior-tipo-a-simples.glb",
+        "detailModelPath": "jardim-das-aguas/jda-interior-tipo-a.glb",
+        "referenceUnit": "B01__F02__U201"
+      },
+      "rooms": [
+        { "name": "Estar · jantar", "area_m2": 14.3, "label": [-43.1, 20.3] },
+        { "name": "Quarto 1", "area_m2": 8.4, "label": [-46.6, 20.5] },
+        { "name": "Quarto 2", "area_m2": 8.1, "label": [-46.6, 17.5] },
+        { "name": "Cozinha · serviço", "area_m2": 6.8, "label": [-42.3, 17.3] },
+        { "name": "Banho", "area_m2": 3.2, "label": [-44.4, 17.0] },
+        { "name": "Varanda", "area_m2": 4.3, "label": [-43.3, 22.6] }
+      ]
+    },
+    {
+      "name": "Tipo B",
+      "area_m2": 53,
+      "bedrooms": 2,
+      "suites": 1,
+      "floors": [2, 3, 4],
+      "finals": ["2", "4"],
+      "basePrice": 275000,
+      "floorPriceAdjust": { "4": -3000 },
+      "interior": {
+        "modelPath": "jardim-das-aguas/jda-interior-tipo-b-simples.glb",
+        "detailModelPath": "jardim-das-aguas/jda-interior-tipo-b.glb",
+        "referenceUnit": "B01__F02__U202"
+      },
+      "rooms": [
+        { "name": "Estar · jantar", "area_m2": 15.0, "label": [-38.8, 20.2] },
+        { "name": "Suíte", "area_m2": 8.7, "label": [-35.4, 20.8] },
+        { "name": "Quarto 2", "area_m2": 7.2, "label": [-34.2, 17.5] },
+        { "name": "Cozinha", "area_m2": 6.8, "label": [-39.8, 17.2] },
+        { "name": "Serviço", "area_m2": 3.2, "label": [-36.2, 17.0] },
+        { "name": "Banho", "area_m2": 2.8, "label": [-37.7, 17.0] },
+        { "name": "Banho da suíte", "area_m2": 2.1, "label": [-33.75, 19.7] },
+        { "name": "Varanda", "area_m2": 4.8, "label": [-38.6, 22.6] }
+      ]
+    },
+    {
+      "name": "Tipo A térreo com quintal",
+      "area_m2": 59,
+      "bedrooms": 2,
+      "suites": 0,
+      "floors": [1],
+      "finals": ["1", "3"],
+      "basePrice": 252000,
+      "interior": {
+        "modelPath": "jardim-das-aguas/jda-interior-tipo-a-terreo-simples.glb",
+        "detailModelPath": "jardim-das-aguas/jda-interior-tipo-a-terreo.glb",
+        "referenceUnit": "B01__F02__U201"
+      },
+      "rooms": [
+        { "name": "Estar · jantar", "area_m2": 14.3, "label": [-43.1, 20.3] },
+        { "name": "Quarto 1", "area_m2": 8.4, "label": [-46.6, 20.5] },
+        { "name": "Quarto 2", "area_m2": 8.1, "label": [-46.6, 17.5] },
+        { "name": "Cozinha · serviço", "area_m2": 6.8, "label": [-42.3, 17.3] },
+        { "name": "Banho", "area_m2": 3.2, "label": [-44.4, 17.0] },
+        { "name": "Quintal com deck", "area_m2": 17.3, "label": [-44.5, 23.25] }
+      ]
+    },
+    {
+      "name": "Tipo B térreo com quintal",
+      "area_m2": 68,
+      "bedrooms": 2,
+      "suites": 1,
+      "floors": [1],
+      "finals": ["2", "4"],
+      "basePrice": 295000,
+      "interior": {
+        "modelPath": "jardim-das-aguas/jda-interior-tipo-b-terreo-simples.glb",
+        "detailModelPath": "jardim-das-aguas/jda-interior-tipo-b-terreo.glb",
+        "referenceUnit": "B01__F02__U202"
+      },
+      "rooms": [
+        { "name": "Estar · jantar", "area_m2": 15.0, "label": [-38.8, 20.2] },
+        { "name": "Suíte", "area_m2": 8.7, "label": [-35.4, 20.8] },
+        { "name": "Quarto 2", "area_m2": 7.2, "label": [-34.2, 17.5] },
+        { "name": "Cozinha", "area_m2": 6.8, "label": [-39.8, 17.2] },
+        { "name": "Serviço", "area_m2": 3.2, "label": [-36.2, 17.0] },
+        { "name": "Banho", "area_m2": 2.8, "label": [-37.7, 17.0] },
+        { "name": "Banho da suíte", "area_m2": 2.1, "label": [-33.75, 19.7] },
+        { "name": "Quintal com deck", "area_m2": 19.8, "label": [-37.0, 23.25] }
+      ]
+    }
+  ]
+}

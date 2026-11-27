@@ -351,13 +351,17 @@ async function measureOnce(browser: Browser, url: string, cpu: number): Promise<
   let floorSwitchMs: number | null = null;
   let floorSwitch: SwitchResult | null = null;
   if (many) {
-    // Um bloco do meio da lista, e o andar mais alto dele.
+    // Um bloco do meio da lista (o 9º botão, como sempre; com menos blocos, o do meio), e o
+    // andar mais alto dele.
+    const towerSel = (await page.evaluate(() => {
+      const sel = 'nav[aria-label="Blocos"] button[data-tower]';
+      if (document.querySelector(`${sel}:nth-of-type(9)`)) return `${sel}:nth-of-type(9)`;
+      const all = document.querySelectorAll<HTMLButtonElement>(sel);
+      const mid = all[Math.floor((all.length - 1) / 2)];
+      return mid ? `${sel}[data-tower="${mid.dataset.tower}"]` : sel;
+    })) as string;
     towerSwitchMs =
-      (
-        (await page.evaluate(
-          SWITCH_TIMER('nav[aria-label="Blocos"] button[data-tower]:nth-of-type(9)'),
-        )) as SwitchResult | null
-      )?.settled ?? null;
+      ((await page.evaluate(SWITCH_TIMER(towerSel))) as SwitchResult | null)?.settled ?? null;
     floorSwitch = (await page.evaluate(
       SWITCH_TIMER('nav[aria-label^="Andares do"] button[data-floor]'),
     )) as SwitchResult | null;

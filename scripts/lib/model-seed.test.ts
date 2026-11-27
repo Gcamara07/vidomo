@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_STATUS_WEIGHTS,
+  allocateStatuses,
   buildSeedSql,
   facadeOf,
   seedUnits,
@@ -109,5 +110,153 @@ describe('buildSeedSql', () => {
   it('uma linha por unidade, com fachada e sem frente/fundos', () => {
     expect(sql.match(/'B09__F0\d__U\d+'/g)).toHaveLength(5);
     expect(sql).toMatch(/'204', 'B09__F02__U204', '\w+', \d+, 'oeste', null\);/);
+  });
+});
+
+// Condomínio no formato do Jardim das Águas: 2 blocos × 4 andares × 4 unidades,
+// finais 1 e 2 ao norte, 3 e 4 ao sul.
+const blocos: ModelTower[] = ['B01', 'B02'].map((code, i) => ({
+  code,
+  center: [i * 20, 0],
+  floors: [1, 2, 3, 4],
+  units: [1, 2, 3, 4].flatMap((floor) =>
+    [1, 2, 3, 4].map((p) => ({
+      objectKey: `${code}__F0${floor}__U${floor}0${p}`,
+      code: `${floor}0${p}`,
+      floor,
+      center: [i * 20 + (p % 2 ? -4 : 4), p <= 2 ? -4.5 : 4.5] as [number, number],
+    })),
+  ),
+}));
+
+const porFinal: SeedConfig = {
+  ...config,
+  priceVariation: 0,
+  frontageByFacade: { sul: 'frente', norte: 'fundos' },
+  unitTypes: [
+    {
+      name: 'Tipo A',
+      area_m2: 46,
+      bedrooms: 2,
+      floors: [2, 3, 4],
+      finals: ['1', '3'],
+      basePrice: 235000,
+      floorPriceAdjust: { '4': -3000 },
+      interior: {
+        modelPath: 'x/a-simples.glb',
+        detailModelPath: 'x/a.glb',
+        referenceUnit: 'B01__F02__U201',
+      },
+      rooms: [
+        { name: 'Estar · jantar', area_m2: 14.3, label: [-43.1, 20.3] },
+        { name: 'Quarto 1', area_m2: 8.4, label: [-46.6, 20.5] },
+      ],
+    },
+    {
+      name: 'Tipo B',
+      area_m2: 53,
+      bedrooms: 2,
+      suites: 1,
+      floors: [2, 3, 4],
+      finals: ['2', '4'],
+      basePrice: 275000,
+    },
+    {
+      name: 'Tipo A térreo',
+      area_m2: 59,
+      bedrooms: 2,
+      floors: [1],
+      finals: ['1', '3'],
+      basePrice: 252000,
+    },
+    {
+      name: 'Tipo B térreo',
+      area_m2: 68,
+      bedrooms: 2,
+      floors: [1],
+      finals: ['2', '4'],
+      basePrice: 295000,
+    },
+  ],
+};
+
+describe('tipo por andar e final, preço exato, frente/fundos', () => {
+  it('escolhe o tipo pelo andar e pelo final do código', () => {
+    const t = porFinal.unitTypes;
+    expect(unitTypeFor(t, 3, '301').name).toBe('Tipo A');
+    expect(unitTypeFor(t, 3, '304').name).toBe('Tipo B');
+    expect(unitTypeFor(t, 1, '103').name).toBe('Tipo A térreo');
+    expect(unitTypeFor(t, 1, '102').name).toBe('Tipo B térreo');
+    expect(() => unitTypeFor(t, 5, '501')).toThrow(/andar 5 \(unidade 501\)/);
+  });
+
+  it('preço sem variação e com ajuste do 4º andar; frente pela fachada', () => {
+    const rows = seedUnits(blocos[0]!, porFinal);
+    const by = (code: string) => rows.find((r) => r.code === code)!;
+    expect(by('201').price).toBe(235000);
+    expect(by('301').price).toBe(235000);
+    expect(by('401').price).toBe(232000);
+    expect(by('102').price).toBe(295000);
+    expect([by('201').facade, by('201').frontage]).toEqual(['norte', 'fundos']);
+    expect([by('203').facade, by('203').frontage]).toEqual(['sul', 'frente']);
+  });
+});
+
+describe('allocateStatuses', () => {
+  const counts = {
+    total: { available: 14, reserved: 4, negotiating: 3, sold: 9, unavailable: 2 },
+    byFloor: { '1': { available: 2, sold: 5, reserved: 1 } },
+    minAvailablePerTower: 3,
+  };
+
+  it('contagem exata, cota do andar, mínimo livre por bloco e determinismo', () => {
+    const a = allocateStatuses(blocos, counts);
+    expect(a).toEqual(allocateStatuses(blocos, counts));
+    const tally = (keys: string[]) =>
+      keys.reduce<Record<string, number>>(
+        (m, k) => ({ ...m, [a.get(k)!]: (m[a.get(k)!] ?? 0) + 1 }),
+        {},
+      );
+    const all = blocos.flatMap((b) => b.units.map((u) => u.objectKey));
+    expect(tally(all)).toEqual(counts.total);
+    expect(tally(all.filter((k) => k.includes('__F01__')))).toEqual({
+      available: 2,
+      sold: 5,
+      reserved: 1,
+    });
+    for (const b of blocos) {
+      expect(
+        b.units.filter((u) => a.get(u.objectKey) === 'available').length,
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('erra se a soma não bate com o número de unidades', () => {
+    expect(() => allocateStatuses(blocos, { total: { ...counts.total, available: 1 } })).toThrow(
+      /soma 19, mas o modelo tem 32/,
+    );
+  });
+});
+
+describe('buildSeedSql com interiores, cômodos e notas', () => {
+  const sql = buildSeedSql(
+    blocos,
+    { ...porFinal, headerNote: 'Versionado.', notes: ['Cidade: X'] },
+    'x.glb',
+  );
+
+  it('cabeçalho, notas, frente/fundos e preço exato', () => {
+    expect(sql.split('\n').slice(1, 3)).toEqual(['-- Versionado.', '-- Cidade: X']);
+    expect(sql).toContain("'201', 'B01__F02__U201', '");
+    expect(sql).toMatch(/'B01__F04__U401', '\w+', 232000, 'norte', 'fundos'\)/);
+  });
+
+  it('interior depois das unidades e cômodos em ordem', () => {
+    const iUpdate = sql.indexOf('update public.unit_types');
+    expect(iUpdate).toBeGreaterThan(sql.lastIndexOf('insert into public.units'));
+    expect(sql).toContain("interior_reference_unit = 'B01__F02__U201'");
+    expect(sql).toContain("(v_org, v_type_0, 'Estar · jantar', 14.3, -43.1, 20.3, 1),");
+    expect(sql).toContain("(v_org, v_type_0, 'Quarto 1', 8.4, -46.6, 20.5, 2);");
+    expect(sql.match(/update public\.unit_types/g)).toHaveLength(1);
   });
 });
